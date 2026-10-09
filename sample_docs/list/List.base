@@ -3,7 +3,7 @@ properties:
   - status
   - priority
   - tags
-view: base-list-view
+view: wcc-list
 viewOptions:
   doneProperty: "note.done"
   sortOrderProperty: "note.sort_order"

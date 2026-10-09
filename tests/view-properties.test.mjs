@@ -1,25 +1,57 @@
 import { build } from 'esbuild';
 import assert from 'node:assert/strict';
-const built = await build({stdin:{contents:"export * from './src/view-properties'; export {writeProp} from './src/frontmatter';",resolveDir:process.cwd()},bundle:true,platform:'node',format:'cjs',write:false,external:['obsidian']});
-const mod = {exports:{}};
-new Function('module','exports','require',built.outputFiles[0].text)(mod,mod.exports,() => ({parsePropertyId:pid=>({type:pid.split('.')[0],name:pid.slice(pid.indexOf('.')+1)})}));
-const {propertyId,viewProperty,propertyOption,writeProp} = mod.exports;
-assert.equal(propertyId(' completed '),'note.completed');
-assert.equal(propertyId('task.order'),'note.task.order');
-assert.equal(propertyId('note.completed'),'note.completed');
-assert.equal(propertyId('file.name'),'file.name');
-assert.equal(propertyId('formula.duration'),'formula.duration');
-for (const empty of ['', ' ', null, undefined, 3, 'note.']) assert.equal(propertyId(empty),null);
-const settings = {doneProperty:'newCompletion', sortOrderProperty:'newRank', dateProperty:'scheduled'};
-const config = {get:key=>settings[key]};
-assert.equal(viewProperty(config,'doneProperty'),'note.newCompletion');
-assert.equal(propertyOption('Done property','doneProperty').type,'text');
-const fm = {existing:'keep'}, writes = [];
-const app = {fileManager:{async processFrontMatter(file,callback) {writes.push(file);callback(fm);}}};
+const built = await build({
+  stdin: {
+    contents:
+      "export * from './src/shared/view-properties'; export {writeProp} from './src/shared/frontmatter';",
+    resolveDir: process.cwd(),
+  },
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  write: false,
+  external: ['obsidian'],
+});
+const mod = { exports: {} };
+new Function('module', 'exports', 'require', built.outputFiles[0].text)(mod, mod.exports, () => ({
+  parsePropertyId: (pid) => ({ type: pid.split('.')[0], name: pid.slice(pid.indexOf('.') + 1) }),
+}));
+const { propertyId, viewProperty, propertyOption, writeProp } = mod.exports;
+assert.equal(propertyId(' completed '), 'note.completed');
+assert.equal(propertyId('task.order'), 'note.task.order');
+assert.equal(propertyId('note.completed'), 'note.completed');
+assert.equal(propertyId('file.name'), 'file.name');
+assert.equal(propertyId('formula.duration'), 'formula.duration');
+for (const empty of ['', ' ', null, undefined, 3, 'note.']) assert.equal(propertyId(empty), null);
+const settings = {
+  doneProperty: 'newCompletion',
+  sortOrderProperty: 'newRank',
+  dateProperty: 'scheduled',
+};
+const config = { get: (key) => settings[key] };
+assert.equal(viewProperty(config, 'doneProperty'), 'note.newCompletion');
+assert.equal(propertyOption('Done property', 'doneProperty').type, 'text');
+const fm = { existing: 'keep' },
+  writes = [];
+const app = {
+  fileManager: {
+    async processFrontMatter(file, callback) {
+      writes.push(file);
+      callback(fm);
+    },
+  },
+};
 // Selecting a new name only configures the view; it never modifies notes.
-assert.equal(writes.length,0);
-await writeProp(app,{},viewProperty(config,'doneProperty'),true);
-await writeProp(app,{},viewProperty(config,'sortOrderProperty'),10);
-await writeProp(app,{},viewProperty(config,'dateProperty'),'2026-10-08');
-assert.deepEqual(fm,{existing:'keep',newCompletion:true,newRank:10,scheduled:'2026-10-08'});
-console.log('New and existing property names normalize consistently; missing properties are created on use with typed values.');
+assert.equal(writes.length, 0);
+await writeProp(app, {}, viewProperty(config, 'doneProperty'), true);
+await writeProp(app, {}, viewProperty(config, 'sortOrderProperty'), 10);
+await writeProp(app, {}, viewProperty(config, 'dateProperty'), '2026-10-08');
+assert.deepEqual(fm, {
+  existing: 'keep',
+  newCompletion: true,
+  newRank: 10,
+  scheduled: '2026-10-08',
+});
+console.log(
+  'New and existing property names normalize consistently; missing properties are created on use with typed values.',
+);

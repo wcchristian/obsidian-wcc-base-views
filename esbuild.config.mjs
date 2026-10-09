@@ -13,8 +13,8 @@ const options = {
   platform: 'node',
   external: ['obsidian'],
   define: {
-    'process.env.NODE_ENV': isProd ? '"production"' : '"development"'
-  }
+    'process.env.NODE_ENV': isProd ? '"production"' : '"development"',
+  },
 };
 
 if (isWatch) {
