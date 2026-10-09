@@ -1,19 +1,25 @@
+import { viewProperty } from './view-properties';
+import { createViewNote, groupDefaults } from './view-create';
+import { applyItemPadding } from './view-spacing';
+import { colorCheckbox, propertyColor } from './task-appearance';
 import {
 	BasesView, TFile, QueryController, HoverParent, HoverPopover, Keymap,
 	BasesEntry, BasesPropertyId, parsePropertyId,
-	Value, BooleanValue, StringValue, NumberValue, DateValue, TagValue, NullValue,
+	Value, BooleanValue, NullValue,
 	Menu, Notice,
 } from 'obsidian';
 import BaseViewsPlugin from './main';
 import { writeProp } from './frontmatter';
+import { PropertyFieldRenderer } from './property-field';
+import { PointerDrag, DropIndicator, DragPoint, rememberScroll, dragGrip, beforeAt, moveBefore } from './drag';
+import { numericOrder } from './list-properties';
 import { AUTO_PALETTE } from './util';
-import { QuickAddModal } from './quick-add-modal';
 
 export const VIEW_TYPE_BASE_LIST = 'base-list-view';
 
 const NULL_KEY = '(no value)';
 
-interface ListItem {
+export interface ListItem {
 	id: string;
 	title: string;
 	file: TFile;
@@ -22,31 +28,57 @@ interface ListItem {
 }
 
 export class BaseListView extends BasesView implements HoverParent {
-	readonly type = VIEW_TYPE_BASE_LIST;
+	readonly type: string = VIEW_TYPE_BASE_LIST;
 	hoverPopover: HoverPopover | null = null;
 
-	private wrap: HTMLElement;
+	protected wrap: HTMLElement;
 	private bgLayer: HTMLElement | null = null;
 	private plugin: BaseViewsPlugin;
 
-	private doneProp: BasesPropertyId | null = null;
-	private sortOrderProp: BasesPropertyId | null = null;
+	protected doneProp: BasesPropertyId | null = null;
+	protected sortOrderProp: BasesPropertyId | null = null;
 	private colorMap: Map<string, string> = new Map();
 	private autoColorMap: Map<string, string> = new Map();
 
 	private dragId: string | null = null;
+	protected dragging = false;
+	private pointerDrag: PointerDrag;
+	private dropList: HTMLElement | null = null;
+	private dropBefore: string | null = null;
 	private dragGroupKey: string | null = null;
-	private dropIndicator: HTMLElement | null = null;
+	private dropIndicator: DropIndicator;
 
 	constructor(ctrl: QueryController, parent: HTMLElement, plugin: BaseViewsPlugin) {
 		super(ctrl);
 		this.plugin = plugin;
 		this.wrap = parent.createDiv('bv-list-wrap');
+		this.dropIndicator = new DropIndicator(this.wrap);
+		this.pointerDrag = new PointerDrag(this.wrap, {
+			items: '.bv-list-row', ignore: 'a:not(.bv-list-row-link), button, input, textarea, .bv-list-row-props',
+			onStart: row => {
+				this.dragId = row.dataset.itemId!;
+				this.dragGroupKey = row.closest<HTMLElement>('[data-list-group]')?.dataset.listGroup ?? NULL_KEY;
+				this.dragging = true;
+			},
+			onMove: (_row, point) => this.updateListDrop(point),
+			onDrop: async (_row, point) => { this.updateListDrop(point); await this.commitListDrop(); },
+			onEnd: () => {
+				this.dragging = false; this.dragId = null; this.dragGroupKey = null;
+				this.clearListDrop();
+				void this.onDataUpdated();
+			},
+			onError: error => { console.error(error); new Notice('Failed to move task. The list has been refreshed.'); },
+		});
 	}
 
 	async onDataUpdated(): Promise<void> {
-		this.doneProp = this.config.getAsPropertyId('doneProperty') ?? null;
-		this.sortOrderProp = this.config.getAsPropertyId('sortOrderProperty') ?? null;
+		if (this.dragging) return;
+		applyItemPadding(this.wrap, this.config);
+		const restoreScroll = rememberScroll(this.wrap, []);
+		const done = viewProperty(this.config, 'doneProperty');
+		this.doneProp = done && parsePropertyId(done).type === 'note' ? done : null;
+		const order = viewProperty(this.config, 'sortOrderProperty');
+		this.sortOrderProp = order && parsePropertyId(order).type === 'note' ? order : null;
 		this.colorMap = this.parseColorMap();
 
 		// Build auto-color map when colorProperty set but no colorValues configured
@@ -72,6 +104,7 @@ export class BaseListView extends BasesView implements HoverParent {
 		this.bgLayer = null;
 		this.buildBackground();
 		this.buildList();
+		restoreScroll();
 	}
 
 	// ── background ───────────────────────────────────────────────────────────
@@ -112,20 +145,13 @@ export class BaseListView extends BasesView implements HoverParent {
 		return map;
 	}
 
-	private getItemColor(item: ListItem): string | null {
-		const raw = (this.config.get('colorProperty') as string | undefined)?.trim();
-		if (!raw) return null;
-		const propName = raw.startsWith('note.') ? raw.slice(5) : raw;
-		const pid = `note.${propName}` as BasesPropertyId;
-		const val = item.entry.getValue(pid);
-		if (!val || val instanceof NullValue) return null;
-		const valStr = val.toString().trim();
-		return this.colorMap.get(valStr) ?? this.autoColorMap.get(valStr) ?? null;
+	protected getItemColor(item: ListItem): string | null {
+		return propertyColor(this.config, item.entry);
 	}
 
 	// ── groupBy helper (same as kanban) ──────────────────────────────────────
 
-	private getGroupByPropId(): BasesPropertyId | null {
+	protected getGroupByPropId(): BasesPropertyId | null {
 		const extract = (v: unknown): BasesPropertyId | null => {
 			if (typeof v === 'string' && v) return v as BasesPropertyId;
 			if (v && typeof v === 'object') {
@@ -140,7 +166,7 @@ export class BaseListView extends BasesView implements HoverParent {
 
 	// ── build ────────────────────────────────────────────────────────────────
 
-	private buildList() {
+	protected buildList() {
 		const groups = this.data.groupedData;
 		const isGrouped = groups && groups.length > 0 && groups.some(g => g.hasKey() && g.key != null);
 
@@ -154,7 +180,7 @@ export class BaseListView extends BasesView implements HoverParent {
 			const items = this.collectItems(groups.flatMap(g => [...g.entries]));
 			items.forEach(item => this.makeRow(listEl, item, NULL_KEY));
 			this.makeAddButton(this.wrap, NULL_KEY);
-			this.attachListDropTarget(listEl, NULL_KEY);
+			listEl.dataset.listGroup = NULL_KEY;
 			return;
 		}
 
@@ -176,11 +202,11 @@ export class BaseListView extends BasesView implements HoverParent {
 			const listEl = section.createDiv('bv-list-items');
 			const items = this.collectItems([...group.entries]);
 			items.forEach(item => this.makeRow(listEl, item, groupKey));
-			this.attachListDropTarget(listEl, groupKey);
+			listEl.dataset.listGroup = groupKey;
 		}
 	}
 
-	private collectItems(entries: BasesEntry[]): ListItem[] {
+	protected collectItems(entries: BasesEntry[]): ListItem[] {
 		const items: ListItem[] = entries
 			.filter(e => e.file instanceof TFile)
 			.map(e => {
@@ -198,8 +224,8 @@ export class BaseListView extends BasesView implements HoverParent {
 			return [...items].sort((a, b) => {
 				const av = a.entry.getValue(sp);
 				const bv = b.entry.getValue(sp);
-				const an = av && !(av instanceof NullValue) ? Number(av.toString()) : Infinity;
-				const bn = bv && !(bv instanceof NullValue) ? Number(bv.toString()) : Infinity;
+				const an = numericOrder(av?.toString());
+				const bn = numericOrder(bv?.toString());
 				return an - bn;
 			});
 		}
@@ -211,6 +237,7 @@ export class BaseListView extends BasesView implements HoverParent {
 	private makeRow(container: HTMLElement, item: ListItem, groupKey: string) {
 		const row = container.createDiv('bv-list-row' + (item.done ? ' bv-list-row-done' : ''));
 		row.dataset.itemId = item.id;
+		row.toggleClass('bv-list-has-check', !!this.doneProp);
 
 		const color = this.getItemColor(item);
 		if (color) {
@@ -219,34 +246,10 @@ export class BaseListView extends BasesView implements HoverParent {
 		}
 
 		const titleRow = row.createDiv('bv-list-row-title');
-
-		if (this.doneProp) {
-			const cb = titleRow.createDiv('bv-list-check' + (item.done ? ' bv-list-check-on' : ''));
-			cb.onclick = async e => {
-				e.preventDefault();
-				e.stopPropagation();
-				const newVal = !item.done;
-				await writeProp(this.app, item.file, this.doneProp!, newVal);
-				item.done = newVal;
-				row.toggleClass('bv-list-row-done', newVal);
-				cb.toggleClass('bv-list-check-on', newVal);
-			};
-		}
-
-		const link = titleRow.createEl('a', { text: item.title, cls: 'bv-list-row-link', href: '#' });
-		link.title = item.title;
-		link.onclick = e => {
-			e.preventDefault();
-			e.stopPropagation();
-			const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-			leaf?.openFile(item.file);
-		};
-		link.onmouseover = e => {
-			this.app.workspace.trigger('hover-link', { event: e, source: 'bases', hoverParent: this, targetEl: row, linktext: item.file.path });
-		};
+		this.renderTitle(titleRow, item, row);
 
 		row.onclick = e => {
-			if ((e.target as HTMLElement).closest('.bv-list-check')) return;
+			if ((e.target as HTMLElement).closest('button, input, textarea, a, .bv-list-row-props')) return;
 			e.preventDefault();
 			e.stopPropagation();
 			const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
@@ -255,10 +258,10 @@ export class BaseListView extends BasesView implements HoverParent {
 
 		// Middle-click opens in a new tab, like a normal Obsidian link
 		row.addEventListener('mousedown', e => {
-			if (e.button === 1) e.preventDefault();
+			if (e.button === 1 && !(e.target as HTMLElement).closest('.bv-list-row-props, button, input, textarea')) e.preventDefault();
 		});
 		row.addEventListener('auxclick', e => {
-			if (e.button !== 1) return;
+			if (e.button !== 1 || (e.target as HTMLElement).closest('.bv-list-row-props, button, input, textarea')) return;
 			e.preventDefault();
 			e.stopPropagation();
 			this.app.workspace.getLeaf('tab').openFile(item.file);
@@ -281,187 +284,130 @@ export class BaseListView extends BasesView implements HoverParent {
 
 		const props = row.createDiv('bv-list-row-props');
 		this.config.getOrder().forEach(pid => {
-			const { name } = parsePropertyId(pid);
-			if (name === 'name') return;
+						if (pid === 'file.name') return;
 			if (this.doneProp && pid === this.doneProp) return;
 			const val = item.entry.getValue(pid);
-			if (!val || val instanceof NullValue) return;
+			if ((!val || val instanceof NullValue) && parsePropertyId(pid).type !== 'note') return;
 			const propRow = props.createDiv('bv-list-prop-row');
 			propRow.createSpan({ cls: 'bv-list-prop-label', text: this.config.getDisplayName(pid) + ': ' });
-			this.renderPropVal(propRow, val, item, pid);
+			this.renderPropVal(propRow, val ?? new NullValue(), item, pid);
 		});
 
-		row.setAttribute('draggable', 'true');
-		row.addEventListener('dragstart', e => {
-			e.dataTransfer?.setData('text/plain', item.id);
-			e.dataTransfer!.effectAllowed = 'move';
-			this.dragId = item.id;
-			this.dragGroupKey = groupKey;
-			setTimeout(() => row.addClass('bv-list-row-dragging'), 0);
-		});
-		row.addEventListener('dragend', () => {
-			row.removeClass('bv-list-row-dragging');
-			this.dragId = null;
-			this.dragGroupKey = null;
-			this.removeDropIndicator();
-		});
 	}
 
-	private renderPropVal(parent: HTMLElement, val: Value, item: ListItem, pid: BasesPropertyId) {
-		if (val instanceof BooleanValue) {
-			const checked = val.isTruthy();
-			const tog = parent.createEl('div', { cls: 'bc-toggle' + (checked ? ' bc-toggle-on' : '') });
-			tog.createEl('div', { cls: 'bc-toggle-knob' });
-			tog.onclick = async e => {
+	protected renderTitle(titleRow: HTMLElement, item: ListItem, row: HTMLElement) {
+		dragGrip(titleRow, `Drag ${item.title} to reorder or move between groups`);
+
+		if (this.doneProp) {
+			const cb = titleRow.createEl('button', { cls: 'bv-list-check' + (item.done ? ' bv-list-check-on' : ''),
+				attr: { type: 'button', role: 'checkbox', 'aria-checked': String(item.done), 'aria-label': `Mark ${item.title} ${item.done ? 'incomplete' : 'complete'}` } });
+			colorCheckbox(cb, this.config, item.entry);
+			cb.onclick = async e => {
+				e.preventDefault();
 				e.stopPropagation();
-				const newVal = !checked;
-				await writeProp(this.app, item.file, pid, newVal);
-				tog.toggleClass('bc-toggle-on', newVal);
+				const newVal = !item.done;
+				cb.disabled = true;
+				try {
+					await writeProp(this.app, item.file, this.doneProp!, newVal);
+				} catch (err) {
+					console.error(err);
+					new Notice('Failed to update completion');
+					return;
+				} finally { cb.disabled = false; }
+				item.done = newVal;
+				row.toggleClass('bv-list-row-done', newVal);
+				cb.toggleClass('bv-list-check-on', newVal);
+				cb.setAttribute('aria-checked', String(newVal));
+				cb.setAttribute('aria-label', `Mark ${item.title} ${newVal ? 'incomplete' : 'complete'}`);
 			};
-		} else if (val instanceof StringValue || val instanceof NumberValue || val instanceof TagValue || val instanceof DateValue) {
-			const span = parent.createSpan({ cls: 'bc-prop-val', text: val.toString() });
-			span.onclick = e => {
-				e.stopPropagation();
-				const raw = val.toString();
-				const isDate = val instanceof DateValue;
-				const hasTime = isDate && raw.includes('T');
-				const input = parent.createEl('input', {
-					cls: 'bc-prop-input',
-					type: isDate ? (hasTime ? 'datetime-local' : 'date') : 'text',
-				});
-				input.value = isDate ? raw.slice(0, hasTime ? 16 : 10) : raw;
-				span.style.display = 'none';
-				input.focus();
-				if (!isDate) input.select();
-				let settled = false;
-				const commit = async () => {
-					if (settled) return;
-					settled = true;
-					await writeProp(this.app, item.file, pid, input.value);
-					input.remove();
-					span.style.display = '';
-				};
-				const cancel = () => {
-					if (settled) return;
-					settled = true;
-					input.remove();
-					span.style.display = '';
-				};
-				input.onblur = () => void commit();
-				input.onkeydown = ev => {
-					if (ev.key === 'Enter') { ev.preventDefault(); void commit(); }
-					if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
-				};
-			};
-		} else {
-			parent.createSpan({ cls: 'bc-prop-val', text: val.toString() });
 		}
+
+		const link = titleRow.createEl('a', { text: item.title, cls: 'bv-list-row-link', href: '#' });
+		link.draggable = false;
+		link.title = item.title;
+		link.onclick = e => {
+			e.preventDefault();
+			e.stopPropagation();
+			const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
+			leaf?.openFile(item.file);
+		};
+		link.onmouseover = e => {
+			this.app.workspace.trigger('hover-link', { event: e, source: 'bases', hoverParent: this, targetEl: row, linktext: item.file.path });
+		};
+
+	}
+
+	protected renderPropVal(parent: HTMLElement, val: Value, item: ListItem, pid: BasesPropertyId) {
+		new PropertyFieldRenderer(this, 'bv-list').render(parent, val, item, pid);
+	}
+
+	private renderPropertyText(parent: HTMLElement, raw: string, item: ListItem) {
+		new PropertyFieldRenderer(this, 'bv-list').renderText(parent, raw, item);
 	}
 
 	// ── drag-and-drop ────────────────────────────────────────────────────────
 
-	private positionDropIndicator(e: DragEvent, listEl: HTMLElement) {
-		if (!this.dropIndicator) {
-			this.dropIndicator = document.createElement('div');
-			this.dropIndicator.className = 'bv-list-drop-indicator';
-		}
-		const rows = Array.from(listEl.querySelectorAll('.bv-list-row')) as HTMLElement[];
-		let before: HTMLElement | null = null;
-		for (const r of rows) {
-			const rect = r.getBoundingClientRect();
-			if (e.clientY < rect.top + rect.height / 2) { before = r; break; }
-		}
-		if (before) listEl.insertBefore(this.dropIndicator, before);
-		else listEl.appendChild(this.dropIndicator);
+	private clearListDrop() {
+		this.dropList?.classList.remove('bv-list-drop');
+		this.dropList = null; this.dropBefore = null;
+		this.dropIndicator.hide();
 	}
 
-	private removeDropIndicator() {
-		if (this.dropIndicator?.parentNode) {
-			this.dropIndicator.parentNode.removeChild(this.dropIndicator);
-		}
+	private updateListDrop(point: DragPoint) {
+		this.clearListDrop();
+		const hit = this.wrap.ownerDocument.elementFromPoint(point.x, point.y);
+		if (!hit || !this.wrap.contains(hit)) return;
+		const list = hit.closest<HTMLElement>('[data-list-group]')
+			?? hit.closest('.bv-list-group')?.querySelector<HTMLElement>('[data-list-group]')
+			?? this.wrap.querySelector<HTMLElement>('.bv-list-ungrouped, .cat-ungrouped');
+		if (!list) return;
+		this.dropList = list;
+		list.classList.add('bv-list-drop');
+		const rows = Array.from(list.querySelectorAll<HTMLElement>('.bv-list-row'));
+		const before = beforeAt(rows, point.y, this.dragId!, 'itemId');
+		this.dropBefore = before?.dataset.itemId ?? null;
+		const remaining = rows.filter(row => row.dataset.itemId !== this.dragId);
+		const target = list.dataset.listGroup === NULL_KEY ? 'List' : list.dataset.listGroup ?? 'List';
+		this.dropIndicator.show(list, before, remaining[remaining.length - 1] ?? null, `${target} · ${before ? 'Before ' + before.querySelector('a')?.textContent : 'At end'}`);
 	}
 
-	private attachListDropTarget(listEl: HTMLElement, groupKey: string) {
-		listEl.addEventListener('dragover', e => {
-			e.preventDefault();
-			e.dataTransfer!.dropEffect = 'move';
-			listEl.addClass('bv-list-drop');
-			this.positionDropIndicator(e, listEl);
-		});
-		listEl.addEventListener('dragleave', e => {
-			if (!listEl.contains(e.relatedTarget as Node)) {
-				listEl.removeClass('bv-list-drop');
-				this.removeDropIndicator();
-			}
-		});
-		listEl.addEventListener('drop', async e => {
-			e.preventDefault();
-			listEl.removeClass('bv-list-drop');
-			const id = e.dataTransfer?.getData('text/plain');
-			if (!id) { this.removeDropIndicator(); return; }
-
-			if (this.dragGroupKey === groupKey) {
-				await this.reorderItems(id, listEl);
-			} else {
-				this.removeDropIndicator();
-				await this.moveItemToGroup(id, groupKey);
-			}
-			this.dragId = null;
-			this.dragGroupKey = null;
-		});
-	}
-
-	private async reorderItems(dragId: string, listEl: HTMLElement) {
-		if (!this.sortOrderProp) {
-			this.removeDropIndicator();
-			new Notice('Set a "Sort order property" on this view to enable drag-and-drop reordering.');
-			return;
+	private async commitListDrop() {
+		const list = this.dropList;
+		const id = this.dragId;
+		if (!list || !id) return;
+		const group = list.dataset.listGroup ?? NULL_KEY;
+		const crossing = group !== this.dragGroupKey;
+		if (!crossing && !this.sortOrderProp) {
+			new Notice('Select a numeric Sort order property to save manual list order.'); return;
 		}
-
-		const allChildren = Array.from(listEl.children) as HTMLElement[];
-		const indicatorIdx = this.dropIndicator
-			? allChildren.indexOf(this.dropIndicator)
-			: allChildren.length;
-		this.removeDropIndicator();
-
-		const rows = Array.from(listEl.querySelectorAll('.bv-list-row')) as HTMLElement[];
-		const ids = rows.map(r => r.dataset.itemId ?? '').filter(Boolean);
-		const fromIdx = ids.indexOf(dragId);
-		if (fromIdx === -1) return;
-
-		const rowsBefore = allChildren.slice(0, indicatorIdx).filter(r => r.classList.contains('bv-list-row'));
-		let toIdx = rowsBefore.length;
-		if (toIdx > fromIdx) toIdx--;
-
-		ids.splice(fromIdx, 1);
-		ids.splice(toIdx, 0, dragId);
-
-		const sp = this.sortOrderProp;
-		for (let i = 0; i < ids.length; i++) {
-			const file = this.app.vault.getFileByPath(ids[i]);
-			if (file) await writeProp(this.app, file, sp, i * 10);
-		}
-	}
-
-	private async moveItemToGroup(itemId: string, newGroupKey: string) {
-		const groupByPid = this.getGroupByPropId();
-		if (!groupByPid) {
-			new Notice('Set a Group By on this base to enable drag-and-drop between groups.');
-			return;
-		}
-		const file = this.app.vault.getFileByPath(itemId);
+		const file = this.app.vault.getFileByPath(id);
 		if (!file) return;
-		try {
-			await writeProp(this.app, file, groupByPid, newGroupKey === NULL_KEY ? '' : newGroupKey);
-		} catch (err) {
-			console.error(err);
-			new Notice('Failed to update frontmatter');
+		const ids = Array.from(list.querySelectorAll<HTMLElement>('.bv-list-row')).map(row => row.dataset.itemId!).filter(Boolean);
+		const order = moveBefore(ids, id, this.dropBefore);
+		if (!crossing && ids.join('\n') === order.join('\n')) return;
+		if (crossing) {
+			const groupPid = this.getGroupByPropId();
+			if (!groupPid || parsePropertyId(groupPid).type !== 'note') { new Notice('Choose a note property for grouping to move between groups.'); return; }
+			await writeProp(this.app, file, groupPid, group === NULL_KEY ? '' : group);
 		}
+		if (this.sortOrderProp) {
+			for (let i = 0; i < order.length; i++) {
+				const target = this.app.vault.getFileByPath(order[i]);
+				if (target) await writeProp(this.app, target, this.sortOrderProp, i * 10);
+			}
+		}
+	}
+
+	onunload() {
+		this.pointerDrag.destroy();
+		this.clearListDrop();
+		this.dropIndicator.destroy();
+		super.onunload();
 	}
 
 	// ── context menu ─────────────────────────────────────────────────────────
 
-	private showContextMenu(e: MouseEvent, item: ListItem) {
+	protected showContextMenu(e: MouseEvent, item: ListItem) {
 		const menu = new Menu();
 		menu.addItem(i => i.setTitle('Open in new tab').setIcon('file-plus').onClick(() => {
 			this.app.workspace.getLeaf('tab').openFile(item.file);
@@ -510,11 +456,9 @@ export class BaseListView extends BasesView implements HoverParent {
 		btn.onclick = e => { e.preventDefault(); e.stopPropagation(); this.createListItem(groupKey); };
 	}
 
-	private createListItem(_groupKey: string) {
-		const folder = ((this.config.get('newNoteFolder') as string) ?? '').trim();
-		new QuickAddModal(this.app, this.plugin.settings, this.plugin, undefined, folder || undefined).open();
-	}
-}
+	protected createListItem(groupKey: string) {
+		return createViewNote(this, undefined, groupDefaults(this, this.getGroupByPropId(), groupKey));
+	}}
 
 function plusSvg(): string {
 	return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';

@@ -1,14 +1,16 @@
+import { BaseTableView, VIEW_TYPE_BASE_TABLE } from './table-view';
+import { propertyOption } from './view-properties';
+import { itemPaddingOption } from './view-spacing';
 import {
   Plugin, BasesView, QueryController,
   BasesAllOptions, BasesDropdownOption, BasesSliderOption,
-  BasesTextOption, BasesMultitextOption, BasesToggleOption, BasesFolderOption,
+  BasesTextOption, BasesMultitextOption, BasesToggleOption,
 } from 'obsidian';
 import { BaseCalendarView, VIEW_TYPE_BASE_CALENDAR } from './calendar-view';
 import { BaseKanbanView, VIEW_TYPE_BASE_KANBAN } from './kanban-view';
 import { BaseTimelineView, VIEW_TYPE_BASE_TIMELINE } from './timeline-view';
 import { BaseListView, VIEW_TYPE_BASE_LIST } from './list-view';
 import { BaseViewsSettings, DEFAULT_SETTINGS, BaseViewsSettingTab, migrateSettings } from './settings';
-import { QuickAddModal } from './quick-add-modal';
 
 class DisabledView extends BasesView {
   readonly type: string;
@@ -31,11 +33,11 @@ export default class BaseViewsPlugin extends Plugin {
     await this.loadSettings();
 
     this.registerBasesView(VIEW_TYPE_BASE_CALENDAR, {
-      name: 'Calendar',
+      name: 'CA - calendar',
       icon: 'calendar',
       factory: (controller, containerEl) => {
         if (!this.settings.enableCalendar) {
-          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_CALENDAR, 'Calendar');
+          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_CALENDAR, 'CA - calendar');
         }
         return new BaseCalendarView(controller, containerEl, this);
       },
@@ -44,24 +46,13 @@ export default class BaseViewsPlugin extends Plugin {
           type: 'group',
           displayName: 'Properties',
           items: [
-            { type: 'property', displayName: 'Date property', key: 'dateProperty' },
-            { type: 'property', displayName: 'End date property', key: 'endDateProperty' },
-            { type: 'property', displayName: 'Done property', key: 'doneProperty' },
-            { type: 'property', displayName: 'Sort order property', key: 'sortOrderProperty' },
+            propertyOption('Date property', 'dateProperty'),
+            propertyOption('End date property', 'endDateProperty'),
+            propertyOption('Done property', 'doneProperty'),
+            propertyOption('Sort order property', 'sortOrderProperty'),
           ],
         },
-        {
-          type: 'group',
-          displayName: 'New notes',
-          items: [
-            {
-              type: 'folder',
-              displayName: 'New note folder',
-              key: 'newNoteFolder',
-              placeholder: 'Vault root',
-            } as BasesFolderOption,
-          ],
-        },
+        { type: 'group', displayName: 'Spacing', items: [itemPaddingOption] },
         {
           type: 'group',
           displayName: 'Display',
@@ -118,13 +109,21 @@ export default class BaseViewsPlugin extends Plugin {
           type: 'group',
           displayName: 'Color',
           items: [
-            { type: 'property', displayName: 'Color by property', key: 'colorProperty' },
+            propertyOption('Color by property', 'colorProperty'),
             {
               type: 'multitext',
               displayName: 'Value colors (value:color)',
               key: 'colorValues',
               default: [],
             } as BasesMultitextOption,
+          ],
+        },
+        {
+          type: 'group',
+          displayName: 'Checkbox color',
+          items: [
+            propertyOption('Color checkbox by property', 'checkboxColorProperty'),
+            { type: 'multitext', displayName: 'Checkbox value colors (value:color)', key: 'checkboxColorValues', default: [] } as BasesMultitextOption,
           ],
         },
         {
@@ -168,11 +167,11 @@ export default class BaseViewsPlugin extends Plugin {
     });
 
     this.registerBasesView(VIEW_TYPE_BASE_KANBAN, {
-      name: 'Kanban',
+      name: 'CA - kanban',
       icon: 'columns-3',
       factory: (controller, containerEl) => {
         if (!this.settings.enableKanban) {
-          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_KANBAN, 'Kanban');
+          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_KANBAN, 'CA - kanban');
         }
         return new BaseKanbanView(controller, containerEl, this);
       },
@@ -181,25 +180,14 @@ export default class BaseViewsPlugin extends Plugin {
           type: 'group',
           displayName: 'Properties',
           items: [
-            { type: 'property', displayName: 'Sub-group by', key: 'subgroupProperty' },
-            { type: 'property', displayName: 'Sort order property', key: 'sortOrderProperty' },
-            { type: 'property', displayName: 'Card title property', key: 'cardTitleProperty' },
-            { type: 'property', displayName: 'Done property', key: 'doneProperty' },
-            { type: 'property', displayName: 'Cover image property', key: 'coverImageProperty' },
+            propertyOption('Sub-group by', 'subgroupProperty'),
+            propertyOption('Sort order property', 'sortOrderProperty'),
+            propertyOption('Card title property', 'cardTitleProperty'),
+            propertyOption('Done property', 'doneProperty'),
+            propertyOption('Cover image property', 'coverImageProperty'),
           ],
         },
-        {
-          type: 'group',
-          displayName: 'New notes',
-          items: [
-            {
-              type: 'folder',
-              displayName: 'New note folder',
-              key: 'newNoteFolder',
-              placeholder: 'Vault root',
-            } as BasesFolderOption,
-          ],
-        },
+        { type: 'group', displayName: 'Spacing', items: [itemPaddingOption] },
         {
           type: 'group',
           displayName: 'Layout',
@@ -252,6 +240,8 @@ export default class BaseViewsPlugin extends Plugin {
           type: 'group',
           displayName: 'Color',
           items: [
+            propertyOption('Card color by property', 'colorProperty'),
+            { type: 'multitext', displayName: 'Card value colors (value:color)', key: 'colorValues', default: [] } as BasesMultitextOption,
             {
               type: 'multitext',
               displayName: 'Column colors (value:color)',
@@ -265,6 +255,14 @@ export default class BaseViewsPlugin extends Plugin {
               default: 'header',
               options: { header: 'Header accent', column: 'Whole column', both: 'Header + card border' },
             } as BasesDropdownOption,
+          ],
+        },
+        {
+          type: 'group',
+          displayName: 'Checkbox color',
+          items: [
+            propertyOption('Color checkbox by property', 'checkboxColorProperty'),
+            { type: 'multitext', displayName: 'Checkbox value colors (value:color)', key: 'checkboxColorValues', default: [] } as BasesMultitextOption,
           ],
         },
         {
@@ -308,11 +306,11 @@ export default class BaseViewsPlugin extends Plugin {
     });
 
     this.registerBasesView(VIEW_TYPE_BASE_TIMELINE, {
-      name: 'Timeline',
+      name: 'CA - timeline',
       icon: 'gantt-chart',
       factory: (controller, containerEl) => {
         if (!this.settings.enableTimeline) {
-          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_TIMELINE, 'Timeline');
+          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_TIMELINE, 'CA - timeline');
         }
         return new BaseTimelineView(controller, containerEl, this);
       },
@@ -321,25 +319,15 @@ export default class BaseViewsPlugin extends Plugin {
           type: 'group',
           displayName: 'Properties',
           items: [
-            { type: 'property', displayName: 'Start date', key: 'dateProperty' },
-            { type: 'property', displayName: 'End date', key: 'endDateProperty' },
-            { type: 'property', displayName: 'Done', key: 'doneProperty' },
-            { type: 'property', displayName: 'Subtitle', key: 'subtitleProperty' },
-            { type: 'property', displayName: 'Sort order property', key: 'sortOrderProperty' },
+            propertyOption('Start date', 'dateProperty'),
+            propertyOption('End date', 'endDateProperty'),
+            propertyOption('Done', 'doneProperty'),
+            propertyOption('Subtitle', 'subtitleProperty'),
+            propertyOption('Sort order property', 'sortOrderProperty'),
           ],
         },
-        {
-          type: 'group',
-          displayName: 'New notes',
-          items: [
-            {
-              type: 'folder',
-              displayName: 'New note folder',
-              key: 'newNoteFolder',
-              placeholder: 'Vault root',
-            } as BasesFolderOption,
-          ],
-        },
+        { type: 'group', displayName: 'Spacing', items: [itemPaddingOption, {type: 'slider', displayName: 'Title column width (px)', key: 'labelWidth', default: 200, min: 120, max: 600, step: 10} as BasesSliderOption] },
+        {type: 'group', displayName: 'Mobile', items: [{type: 'toggle', displayName: 'Stack details above timeline on small screens', key: 'mobileLayout', default: true} as BasesToggleOption]},
         {
           type: 'group',
           displayName: 'Display',
@@ -384,13 +372,21 @@ export default class BaseViewsPlugin extends Plugin {
           type: 'group',
           displayName: 'Color',
           items: [
-            { type: 'property', displayName: 'Color by property', key: 'colorProperty' },
+            propertyOption('Color by property', 'colorProperty'),
             {
               type: 'multitext',
               displayName: 'Value colors (value:color)',
               key: 'colorValues',
               default: [],
             } as BasesMultitextOption,
+          ],
+        },
+        {
+          type: 'group',
+          displayName: 'Checkbox color',
+          items: [
+            propertyOption('Color checkbox by property', 'checkboxColorProperty'),
+            { type: 'multitext', displayName: 'Checkbox value colors (value:color)', key: 'checkboxColorValues', default: [] } as BasesMultitextOption,
           ],
         },
         {
@@ -433,47 +429,35 @@ export default class BaseViewsPlugin extends Plugin {
       ] as BasesAllOptions[]),
     });
 
-    this.registerBasesView(VIEW_TYPE_BASE_LIST, {
-      name: 'List',
-      icon: 'list',
-      factory: (controller, containerEl) => {
-        if (!this.settings.enableList) {
-          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_LIST, 'List');
-        }
-        return new BaseListView(controller, containerEl, this);
-      },
-      options: () => ([
+    const listOptions = () => ([
         {
           type: 'group',
           displayName: 'Properties',
           items: [
-            { type: 'property', displayName: 'Done property', key: 'doneProperty' },
-            { type: 'property', displayName: 'Sort order property', key: 'sortOrderProperty' },
+            propertyOption('Done property', 'doneProperty'),
+            propertyOption('Sort order property', 'sortOrderProperty'),
           ],
         },
-        {
-          type: 'group',
-          displayName: 'New notes',
-          items: [
-            {
-              type: 'folder',
-              displayName: 'New note folder',
-              key: 'newNoteFolder',
-              placeholder: 'Vault root',
-            } as BasesFolderOption,
-          ],
-        },
+        { type: 'group', displayName: 'Spacing', items: [itemPaddingOption] },
         {
           type: 'group',
           displayName: 'Color',
           items: [
-            { type: 'property', displayName: 'Color by property', key: 'colorProperty' },
+            propertyOption('Color by property', 'colorProperty'),
             {
               type: 'multitext',
               displayName: 'Value colors (value:color)',
               key: 'colorValues',
               default: [],
             } as BasesMultitextOption,
+          ],
+        },
+        {
+          type: 'group',
+          displayName: 'Checkbox color',
+          items: [
+            propertyOption('Color checkbox by property', 'checkboxColorProperty'),
+            { type: 'multitext', displayName: 'Checkbox value colors (value:color)', key: 'checkboxColorValues', default: [] } as BasesMultitextOption,
           ],
         },
         {
@@ -513,20 +497,38 @@ export default class BaseViewsPlugin extends Plugin {
             } as BasesSliderOption,
           ],
         },
+      ] as BasesAllOptions[]);
+
+    this.registerBasesView(VIEW_TYPE_BASE_LIST, {
+      name: 'CA - list',
+      icon: 'list',
+      factory: (controller, containerEl) => {
+        if (!this.settings.enableList) {
+          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_LIST, 'CA - list');
+        }
+        return new BaseListView(controller, containerEl, this);
+      },
+      options: listOptions,
+    });
+
+    this.registerBasesView(VIEW_TYPE_BASE_TABLE, {
+      name: 'CA - Table',
+      icon: 'table',
+      factory: (controller, containerEl) => {
+        if (!this.settings.enableTable) {
+          return new DisabledView(controller, containerEl, VIEW_TYPE_BASE_TABLE, 'CA - Table');
+        }
+        return new BaseTableView(controller, containerEl, this);
+      },
+      options: () => ([
+        { type: 'group', displayName: 'Properties', items: [propertyOption('Sort order property', 'sortOrderProperty')] },
+        ...listOptions().filter(option => option.type !== 'group' || option.displayName !== 'Properties'),
       ] as BasesAllOptions[]),
     });
 
     this.addSettingTab(new BaseViewsSettingTab(this.app, this));
 
-    this.addRibbonIcon('plus-circle', 'Quick add to base', () => {
-      new QuickAddModal(this.app, this.settings, this).open();
-    });
 
-    this.addCommand({
-      id: 'quick-add-to-base',
-      name: 'Quick add to base',
-      callback: () => new QuickAddModal(this.app, this.settings, this).open(),
-    });
   }
 
   onunload() {

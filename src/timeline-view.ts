@@ -1,19 +1,25 @@
+import { viewProperty } from './view-properties';
+import { PropertyFieldRenderer } from './property-field';
+import { numericOrder } from './list-properties';
+import { createViewNote } from './view-create';
+import { applyItemPadding } from './view-spacing';
+import { colorCheckbox, propertyColor } from './task-appearance';
 import {
 	BasesView, TFile, QueryController, HoverParent, HoverPopover, Keymap,
-	BasesEntry, BasesPropertyId,
-	BooleanValue, NullValue,
-	Menu, App, Modal,
+	BasesEntry, BasesPropertyId, parsePropertyId,
+	Value, BooleanValue, NullValue,
+	Menu, App, Modal, Notice, Platform,
 } from 'obsidian';
 import BaseViewsPlugin from './main';
 import { writeProp } from './frontmatter';
+import { PointerDrag, DropIndicator, DragPoint, rememberScroll, dragGrip } from './drag';
+import { calendarDay, shiftDays } from './drag-dates';
 import { AUTO_PALETTE } from './util';
-import { QuickAddModal } from './quick-add-modal';
 
 export const VIEW_TYPE_BASE_TIMELINE = 'base-timeline-view';
 
 const DK = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-const MS_PER_DAY = 86400000;
-const LABEL_WIDTH = 200;
+const DEFAULT_LABEL_WIDTH = 200;
 const ROW_HEIGHT = 36;
 const GROUP_ROW_HEIGHT = 30;
 const BAR_HEIGHT = 22;
@@ -22,7 +28,6 @@ const COL_STRIP_H = 28;
 const HEADER_HEIGHT = MONTH_STRIP_H + COL_STRIP_H;
 const COL_WIDTHS = { day: 30, week: 80, month: 60 } as const;
 const NAV_SHIFTS_DAYS = { day: 14, week: 28, month: 91 } as const;
-const DRAG_THRESHOLD = 5;
 
 type ZoomLevel = 'day' | 'week' | 'month';
 
@@ -98,6 +103,8 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 	private subtitleProp: BasesPropertyId | null = null;
 	private sortOrderProp: BasesPropertyId | null = null;
 	private zoomLevel: ZoomLevel = 'week';
+	private configuredZoom: ZoomLevel | null = null;
+	private labelWidth = DEFAULT_LABEL_WIDTH;
 
 	private daysVisible = 30;
 	private weeksVisible = 12;
@@ -114,36 +121,63 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 	private items: TimelineItem[] = [];
 	private autoColorMap: Record<string, string> = {};
 	private rowYMap = new Map<string, number>();
+	private rowHeightMap = new Map<string, number>();
+	private rowObserver: ResizeObserver;
+	private paneObserver: ResizeObserver;
+	private mobileLayout = false;
 
-	// Drag state
-	private dragItem: TimelineItem | null = null;
-	private dragMode: 'move' | 'resize-left' | 'resize-right' | null = null;
-	private dragStartX = 0;
-	private dragStartDate: Date | null = null;
-	private dragEndDate: Date | null = null;
-	private dragBarEl: HTMLElement | null = null;
-	private dragMoved = false;
+	private pointerDrag: PointerDrag;
+	private dropIndicator: DropIndicator;
+	private dragging = false;
+	private dragState: { item: TimelineItem; bar: HTMLElement; mode: 'move' | 'resize-left' | 'resize-right'; start: Date; end: Date; scrollLeft: number; nextStart: Date; nextEnd: Date } | null = null;
 
 	constructor(ctrl: QueryController, parent: HTMLElement, plugin: BaseViewsPlugin) {
 		super(ctrl);
 		this.plugin = plugin;
 		this.wrap = parent.createDiv('bt-wrap');
+		this.rowObserver = new ResizeObserver(() => this.reflowRows());
+		this.paneObserver = new ResizeObserver(() => {
+			if (!this.config || this.dragging || !this.barsLayerEl?.isConnected || !this.scrollEl) return;
+			const compact = this.useCompactLayout();
+			this.wrap.style.setProperty('--bt-pane-width', `${this.scrollEl.clientWidth}px`);
+			if (compact !== this.mobileLayout) {
+				const restore = rememberScroll(this.wrap, ['.bt-scroll']);
+				this.scrollEl.empty(); this.buildContent(this.scrollEl); restore();
+			} else this.reflowRows();
+		});
+		this.paneObserver.observe(this.wrap);
+		this.dropIndicator = new DropIndicator(this.wrap);
+		this.pointerDrag = new PointerDrag(this.wrap, {
+			items: '.bt-bar, .bt-row-label', ignore: 'a, button, input, textarea, .bt-bar-check, .bt-row-props, .bt-row-subtitle', preview: false,
+			onStart: (bar, event) => this.startTimelineDrag(bar, event),
+			onMove: (_bar, point) => this.updateTimelineDrag(point),
+			onDrop: async (_bar, point) => { this.updateTimelineDrag(point); await this.commitTimelineDrag(point); },
+			onEnd: () => {
+				this.dragging = false; this.dragState = null; this.dropIndicator.hide();
+				void this.onDataUpdated();
+			},
+			onError: error => { console.error(error); new Notice('Failed to save timeline dates. The timeline has been refreshed.'); },
+		});
 	}
 
 	async onDataUpdated(): Promise<void> {
-		this.dateProp = this.config.getAsPropertyId('dateProperty') ?? null;
-		this.endProp = this.config.getAsPropertyId('endDateProperty') ?? null;
-		this.doneProp = this.config.getAsPropertyId('doneProperty') ?? null;
-		this.subtitleProp = this.config.getAsPropertyId('subtitleProperty') ?? null;
-		this.sortOrderProp = this.config.getAsPropertyId('sortOrderProperty') ?? null;
+		if (this.dragging) return;
+		applyItemPadding(this.wrap, this.config);
+		const width = this.config.get('labelWidth');
+		this.setLabelWidth(typeof width === 'number' && Number.isFinite(width) ? width : DEFAULT_LABEL_WIDTH);
+		const restoreScroll = rememberScroll(this.wrap, ['.bt-scroll']);
+		this.dateProp = viewProperty(this.config, 'dateProperty') ?? null;
+		this.endProp = viewProperty(this.config, 'endDateProperty') ?? null;
+		const done = viewProperty(this.config, 'doneProperty');
+		this.doneProp = done && parsePropertyId(done).type === 'note' ? done : null;
+		this.subtitleProp = viewProperty(this.config, 'subtitleProperty') ?? null;
+		this.sortOrderProp = viewProperty(this.config, 'sortOrderProperty') ?? null;
 
 		const cfgZoom = this.config.get('zoomLevel');
-		if (cfgZoom === 'day' || cfgZoom === 'week' || cfgZoom === 'month') {
-			if (this.zoomLevel !== cfgZoom) {
-				this.zoomLevel = cfgZoom;
-				this.windowStart = null;
-				this.windowEnd = null;
-			}
+		const defaultZoom: ZoomLevel = cfgZoom === 'day' || cfgZoom === 'month' ? cfgZoom : 'week';
+		if (this.configuredZoom !== defaultZoom) {
+			this.configuredZoom = defaultZoom; this.zoomLevel = defaultZoom;
+			this.windowStart = null; this.windowEnd = null;
 		}
 
 		const dv = this.config.get('daysVisible');
@@ -168,6 +202,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
 		this.wrap.empty();
 		this.buildUI(this.wrap);
+		restoreScroll();
 	}
 
 	private resolveBgUrl(raw: string): string {
@@ -207,15 +242,15 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 		const toolbar = container.createDiv('bt-toolbar');
 
 		const nav = toolbar.createDiv('bt-nav');
-		const prev = nav.createEl('button', { cls: 'bt-btn' });
+		const prev = nav.createEl('button', { cls: 'bt-btn', attr: { 'aria-label': 'Previous period', title: 'Previous period' } });
 		prev.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
 		const todayBtn = nav.createEl('button', { text: 'Today', cls: 'bt-today' });
-		const next = nav.createEl('button', { cls: 'bt-btn' });
+		const next = nav.createEl('button', { cls: 'bt-btn', attr: { 'aria-label': 'Next period', title: 'Next period' } });
 		next.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
 
 		this.titleEl = toolbar.createEl('span', { cls: 'bt-title' });
 
-		const zoomGroup = toolbar.createDiv('bt-zoom-group');
+		const zoomGroup = toolbar.createDiv({ cls: 'bt-zoom-group', attr: { role: 'group', 'aria-label': 'Timeline zoom' } });
 		const zDay = zoomGroup.createEl('button', { text: 'Day', cls: 'bt-zoom' });
 		const zWeek = zoomGroup.createEl('button', { text: 'Week', cls: 'bt-zoom' });
 		const zMonth = zoomGroup.createEl('button', { text: 'Month', cls: 'bt-zoom' });
@@ -238,8 +273,8 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 		const shift = (dir: 1 | -1) => {
 			if (!this.windowStart || !this.windowEnd || !this.scrollEl) return;
 			const days = NAV_SHIFTS_DAYS[this.zoomLevel] * dir;
-			this.windowStart = new Date(this.windowStart.getTime() + days * MS_PER_DAY);
-			this.windowEnd = new Date(this.windowEnd.getTime() + days * MS_PER_DAY);
+			this.windowStart = shiftDays(this.windowStart, days);
+			this.windowEnd = shiftDays(this.windowEnd, days);
 			this.normalizeWindowBoundaries();
 			this.cols = this.buildCols();
 			this.scrollEl.empty();
@@ -308,10 +343,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 				let sortOrder = Infinity;
 				if (this.sortOrderProp) {
 					const sv = entry.getValue(this.sortOrderProp);
-					if (sv && !(sv instanceof NullValue)) {
-						const n = Number(sv.toString());
-						if (!isNaN(n)) sortOrder = n;
-					}
+					sortOrder = numericOrder(sv?.toString());
 				}
 
 				this.items.push({
@@ -359,19 +391,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 	}
 
 	private getItemColor(entry: BasesEntry, viewColorMap: Record<string, string>): string | null {
-		const raw = (this.config.get('colorProperty') as string | undefined)?.trim() ?? '';
-		const propName = raw.startsWith('note.') ? raw.slice(5) : raw;
-
-		if (propName) {
-			const pid = `note.${propName}` as BasesPropertyId;
-			const val = entry.getValue(pid);
-			if (val && !(val instanceof NullValue)) {
-				const valStr = val.toString().trim();
-				return viewColorMap[valStr] ?? this.autoColorMap[valStr] ?? null;
-			}
-		}
-
-		return null;
+		return propertyColor(this.config, entry);
 	}
 
 	// ── Window / column math ───────────────────────────────────────────────────
@@ -391,15 +411,15 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 			// Use configured visible range, starting from today
 			const configuredDays = this.getConfiguredDays();
 			minStart = new Date(today);
-			maxEnd = new Date(today.getTime() + configuredDays * MS_PER_DAY);
+			maxEnd = shiftDays(today, configuredDays);
 		} else {
 			// Use max of data range and configured range
 			const configuredDays = this.getConfiguredDays();
 			const pad = padDays[this.zoomLevel];
-			const dataMin = new Date(minStart.getTime() - pad * MS_PER_DAY);
-			const dataMax = new Date(maxEnd.getTime() + pad * MS_PER_DAY);
+			const dataMin = shiftDays(minStart, -(pad));
+			const dataMax = shiftDays(maxEnd, pad);
 			const cfgMin = new Date(today);
-			const cfgMax = new Date(today.getTime() + configuredDays * MS_PER_DAY);
+			const cfgMax = shiftDays(today, configuredDays);
 			minStart = dataMin < cfgMin ? dataMin : cfgMin;
 			maxEnd = dataMax > cfgMax ? dataMax : cfgMax;
 		}
@@ -423,7 +443,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 		if (this.zoomLevel === 'week') {
 			const dow = this.windowStart.getDay();
 			const back = dow === 0 ? 6 : dow - 1;
-			this.windowStart = new Date(this.windowStart.getTime() - back * MS_PER_DAY);
+			this.windowStart = shiftDays(this.windowStart, -(back));
 		} else if (this.zoomLevel === 'month') {
 			this.windowStart = new Date(this.windowStart.getFullYear(), this.windowStart.getMonth(), 1);
 		}
@@ -434,10 +454,10 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 		const cols: Date[] = [];
 		if (this.zoomLevel === 'day') {
 			let d = new Date(this.windowStart);
-			while (d <= this.windowEnd) { cols.push(new Date(d)); d = new Date(d.getTime() + MS_PER_DAY); }
+			while (d <= this.windowEnd) { cols.push(new Date(d)); d = shiftDays(d, 1); }
 		} else if (this.zoomLevel === 'week') {
 			let d = new Date(this.windowStart);
-			while (d <= this.windowEnd) { cols.push(new Date(d)); d = new Date(d.getTime() + 7 * MS_PER_DAY); }
+			while (d <= this.windowEnd) { cols.push(new Date(d)); d = shiftDays(d, 7); }
 		} else {
 			let yr = this.windowStart.getFullYear(), mo = this.windowStart.getMonth();
 			const endYr = this.windowEnd.getFullYear(), endMo = this.windowEnd.getMonth();
@@ -449,12 +469,20 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 		return cols;
 	}
 
-	private getColWidth(): number { return COL_WIDTHS[this.zoomLevel]; }
+	private getColWidth(): number { return this.mobileLayout ? {day:44,week:96,month:100}[this.zoomLevel] : COL_WIDTHS[this.zoomLevel]; }
+
+	private useCompactLayout(): boolean {
+		return this.config.get('mobileLayout') !== false && this.wrap.clientWidth <= 700 && (Platform.isMobile || !!this.wrap.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches);
+	}
+
+	private getBarTop(rowY: number, height: number): number {
+		return rowY - HEADER_HEIGHT + (this.mobileLayout ? height - 64 + 14 : (height - BAR_HEIGHT) / 2);
+	}
 
 	private dateToColFraction(d: Date): number {
 		if (!this.windowStart) return 0;
-		if (this.zoomLevel === 'day') return (d.getTime() - this.windowStart.getTime()) / MS_PER_DAY;
-		if (this.zoomLevel === 'week') return (d.getTime() - this.windowStart.getTime()) / (7 * MS_PER_DAY);
+		if (this.zoomLevel === 'day') return (calendarDay(d) - calendarDay(this.windowStart));
+		if (this.zoomLevel === 'week') return (calendarDay(d) - calendarDay(this.windowStart)) / 7;
 		const yr0 = this.windowStart.getFullYear(), mo0 = this.windowStart.getMonth();
 		const yr1 = d.getFullYear(), mo1 = d.getMonth();
 		const monthIdx = (yr1 - yr0) * 12 + (mo1 - mo0);
@@ -464,22 +492,6 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
 	private dateToPixel(d: Date): number { return this.dateToColFraction(d) * this.getColWidth(); }
 
-	private snapDate(d: Date): Date {
-		const out = new Date(d); out.setHours(0, 0, 0, 0);
-		if (this.zoomLevel === 'week') {
-			const dow = out.getDay(); const back = dow === 0 ? 6 : dow - 1;
-			return new Date(out.getTime() - back * MS_PER_DAY);
-		}
-		if (this.zoomLevel === 'month') return new Date(out.getFullYear(), out.getMonth(), 1);
-		return out;
-	}
-
-	private deltaXToMs(deltaX: number): number {
-		const cw = this.getColWidth();
-		if (this.zoomLevel === 'day') return (deltaX / cw) * MS_PER_DAY;
-		if (this.zoomLevel === 'week') return (deltaX / cw) * 7 * MS_PER_DAY;
-		return (deltaX / cw) * 30 * MS_PER_DAY;
-	}
 
 	private updateToolbarTitle() {
 		if (!this.titleEl || !this.windowStart || !this.windowEnd) return;
@@ -489,25 +501,32 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 		this.titleEl.textContent = s === e ? s : `${s} — ${e}`;
 		if (this.zoomBtns) {
 			(Object.entries(this.zoomBtns) as [ZoomLevel, HTMLElement][]).forEach(([k, btn]) =>
-				btn.toggleClass('bt-zoom-active', k === this.zoomLevel));
+				{ btn.toggleClass('bt-zoom-active', k === this.zoomLevel); btn.setAttribute('aria-pressed', String(k === this.zoomLevel)); });
 		}
 	}
 
 	// ── DOM building ───────────────────────────────────────────────────────────
 
 	private buildContent(scroll: HTMLElement) {
+		this.rowObserver.disconnect();
+		this.scrollEl = scroll;
+		this.mobileLayout = this.useCompactLayout();
+		this.wrap.toggleClass('bt-mobile', this.mobileLayout);
+		this.wrap.style.setProperty('--bt-pane-width', `${scroll.clientWidth}px`);
+		this.wrap.style.setProperty('--bt-track-offset', this.mobileLayout ? '0px' : 'var(--bt-label-width, 200px)');
 		this.updateToolbarTitle();
 		const cw = this.getColWidth();
 		const colCount = this.cols.length;
-		const totalWidth = LABEL_WIDTH + colCount * cw;
+		const totalWidth = (this.mobileLayout ? 0 : this.labelWidth) + colCount * cw;
 
 		const content = scroll.createDiv('bt-content');
-		content.style.minWidth = `${totalWidth}px`;
+		content.style.minWidth = `calc(var(--bt-track-offset, 200px) + ${colCount * cw}px)`;
 
 		this.renderHeader(content, cw, colCount);
 
 		let rowY = HEADER_HEIGHT;
 		this.rowYMap.clear();
+		this.rowHeightMap.clear();
 
 		const isGrouped = this.items.some(i => i.groupKey);
 
@@ -554,11 +573,94 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 		this.scrollToToday(scroll, cw);
 	}
 
+	private renderMobileDates(label: HTMLElement, item: TimelineItem) {
+		const dates = label.createDiv('bt-mobile-dates');
+		const fields: HTMLInputElement[] = [];
+		for (const [caption,pid,isEnd] of [['Start',this.dateProp,false],['End',this.endProp,true]] as const) {
+			if (!pid) continue;
+			const field = dates.createEl('label', {cls:'bt-mobile-date'});
+			field.createSpan({text:caption});
+			if (parsePropertyId(pid).type !== 'note') { field.createSpan({text:DK(isEnd ? item.end : item.start)}); continue; }
+			const input = field.createEl('input', {type:'date',attr:{'aria-label':`${caption} date for ${item.title}`}});
+			input.value = isEnd && item.isSingleDay ? '' : DK(isEnd ? item.end : item.start);
+			input.dataset.timelineEnd=String(isEnd);
+			fields.push(input);
+			input.onchange = async () => {
+				const value = input.value;
+				if ((!value && !isEnd) || (value && !input.checkValidity())) { input.value=DK(isEnd?item.end:item.start); return; }
+				const date = value ? new Date(value+'T00:00:00') : new Date(item.start);
+				if (isNaN(date.getTime()) || (isEnd && date < item.start)) { input.value=DK(item.end);new Notice('End date must be on or after the start date.');return; }
+				fields.forEach(field=>field.disabled=true);
+				try {
+					const start = isEnd ? item.start : date;
+					const end = isEnd ? date : item.end < date || item.isSingleDay ? date : item.end;
+					await this.app.fileManager.processFrontMatter(item.file,fm=>{
+						fm[parsePropertyId(pid).name]=value || null;
+						if (!isEnd && this.endProp && parsePropertyId(this.endProp).type==='note') {
+							const endName=parsePropertyId(this.endProp).name;
+							if (fm[endName] != null && calendarDay(end)!==calendarDay(item.end)) fm[endName]=DK(end);
+						}
+					});
+					item.start=start;item.end=end;item.isSingleDay=!value || calendarDay(start)===calendarDay(end);
+					const bar=Array.from(this.wrap.querySelectorAll<HTMLElement>('.bt-bar')).find(bar=>bar.dataset.itemId===item.id);
+					if(bar)this.updateBarPosition(bar,start,end);
+					for(const field of fields)field.value=field.dataset.timelineEnd==='true'?(item.isSingleDay?'':DK(end)):DK(start);
+				} catch(error) { console.error(error);input.value=isEnd&&item.isSingleDay?'':DK(isEnd?item.end:item.start);new Notice('Failed to update timeline date.'); }
+				finally {fields.forEach(field=>field.disabled=false);}
+			};
+		}
+		const locate = dates.createEl('button', {cls:'bt-locate-range',text:'Show range',attr:{type:'button','aria-label':`Show ${item.title} on timeline`}});
+		locate.onclick = () => { if(this.scrollEl)this.scrollEl.scrollLeft=Math.max(0,this.dateToPixel(item.start)-24); };
+	}
+
+	private setLabelWidth(width: number) {
+		this.labelWidth = Math.max(120, Math.min(600, Math.round(width)));
+		this.wrap.style.setProperty('--bt-label-width', `${this.labelWidth}px`);
+	}
+
+	private renderLabelResize(corner: HTMLElement) {
+		const divider = corner.createDiv({cls: 'bt-label-resize', attr: {
+			role: 'separator', tabindex: '0', 'aria-label': 'Resize title column',
+			'aria-orientation': 'vertical', 'aria-valuemin': '120', 'aria-valuemax': '600',
+		}});
+		divider.title = 'Drag to resize title column; arrow keys adjust width';
+		const update = (width: number) => { this.setLabelWidth(width); divider.setAttribute('aria-valuenow', String(this.labelWidth)); };
+		update(this.labelWidth);
+		let active: {id: number; x: number; width: number} | null = null;
+		divider.onpointerdown = event => {
+			if (event.button !== 0 || active || this.dragging) return;
+			event.preventDefault(); event.stopPropagation();
+			active = {id: event.pointerId, x: event.clientX, width: this.labelWidth};
+			divider.setPointerCapture(event.pointerId); divider.addClass('bt-label-resizing');
+		};
+		divider.onpointermove = event => {
+			if (!active || event.pointerId !== active.id) return;
+			event.preventDefault(); update(active.width + event.clientX - active.x);
+		};
+		const finish = (event: PointerEvent, cancel: boolean) => {
+			if (!active || event.pointerId !== active.id) return;
+			const initial = active.width; active = null;
+			if (cancel) update(initial); else this.config.set('labelWidth', this.labelWidth);
+			divider.removeClass('bt-label-resizing');
+			if (divider.hasPointerCapture(event.pointerId)) divider.releasePointerCapture(event.pointerId);
+		};
+		divider.onpointerup = event => finish(event, false);
+		divider.onpointercancel = event => finish(event, true);
+		divider.onlostpointercapture = event => finish(event, true);
+		divider.onkeydown = event => {
+			if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
+			event.preventDefault(); event.stopPropagation();
+			update(event.key === 'Home' ? DEFAULT_LABEL_WIDTH : this.labelWidth + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 50 : 10));
+			this.config.set('labelWidth', this.labelWidth);
+		};
+	}
+
 	private renderHeader(content: HTMLElement, cw: number, colCount: number) {
 		const headerRow = content.createDiv('bt-header-row');
 
 		const corner = headerRow.createDiv('bt-corner');
-		corner.style.width = `${LABEL_WIDTH}px`;
+		corner.style.width = 'var(--bt-track-offset, var(--bt-label-width, 200px))';
+		if (!this.mobileLayout) this.renderLabelResize(corner);
 
 		const headerMain = headerRow.createDiv('bt-header-main');
 		headerMain.style.width = `${colCount * cw}px`;
@@ -608,7 +710,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 				if (col.getTime() === today.getTime()) cls = 'bt-col-today';
 			} else if (this.zoomLevel === 'week') {
 				label = col.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-				const weekEnd = new Date(col.getTime() + 6 * MS_PER_DAY);
+				const weekEnd = shiftDays(col, 6);
 				if (today >= col && today <= weekEnd) cls = 'bt-col-today';
 			} else {
 				label = col.toLocaleDateString('en-US', col.getMonth() === 0 ? { month: 'short', year: 'numeric' } : { month: 'short' });
@@ -622,9 +724,9 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
 	private renderSwimlaneHeader(content: HTMLElement, label: string, rowY: number, totalWidth: number): number {
 		const hdr = content.createDiv('bt-swimlane-hdr');
-		hdr.textContent = label || '(no value)';
+		hdr.createSpan({cls:'bt-swimlane-label',text:label || '(no value)'});
 		hdr.style.top = `${rowY}px`;
-		hdr.style.width = `${totalWidth}px`;
+		hdr.style.width = '100%';
 		return rowY + GROUP_ROW_HEIGHT;
 	}
 
@@ -633,21 +735,36 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
 		const row = content.createDiv('bt-row');
 		row.style.top = `${rowY}px`;
-		row.style.height = `${ROW_HEIGHT}px`;
 
 		// Label cell (sticky left)
 		const label = row.createDiv('bt-row-label');
-		label.style.width = `${LABEL_WIDTH}px`;
+		label.style.width = this.mobileLayout ? 'var(--bt-pane-width)' : 'var(--bt-label-width, 200px)';
+		label.dataset.itemId = item.id;
 
 		const titleEl = label.createDiv('bt-row-title');
 		titleEl.textContent = item.title;
 		titleEl.title = item.title;
-		titleEl.onclick = () => this.app.workspace.getLeaf(false)?.openFile(item.file);
+		titleEl.tabIndex = 0; titleEl.setAttribute('role', 'link');
+		titleEl.onclick = event => this.app.workspace.getLeaf(Keymap.isModEvent(event))?.openFile(item.file);
+		titleEl.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void this.app.workspace.getLeaf(Keymap.isModEvent(event))?.openFile(item.file); } };
 
-		if (item.subtitle) {
+		if (this.mobileLayout) this.renderMobileDates(label, item);
+
+		if (item.subtitle || (this.subtitleProp && parsePropertyId(this.subtitleProp).type === 'note')) {
 			const subEl = label.createDiv('bt-row-subtitle');
-			subEl.textContent = item.subtitle;
+			if (this.subtitleProp) this.renderPropVal(subEl, item.entry.getValue(this.subtitleProp) ?? new NullValue(), item, this.subtitleProp);
+			else subEl.textContent = item.subtitle;
 			subEl.title = item.subtitle;
+		}
+
+		const props = label.createDiv('bt-row-props');
+		for (const pid of this.config.getOrder()) {
+			if (pid === 'file.name' || pid === this.doneProp || pid === this.subtitleProp || (this.mobileLayout && (pid === this.dateProp || pid === this.endProp))) continue;
+			const value = item.entry.getValue(pid);
+			if ((!value || value instanceof NullValue) && parsePropertyId(pid).type !== 'note') continue;
+			const field = props.createDiv('bt-prop-row');
+			field.createSpan({cls:'bt-prop-label', text:this.config.getDisplayName(pid) + ': '});
+			this.renderPropVal(field, value ?? new NullValue(), item, pid);
 		}
 
 		// Track cells (one per column, for grid lines and shading)
@@ -664,7 +781,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 				if (dow === 0 || dow === 6) cell.addClass('bt-cell-weekend');
 				if (col.getTime() === today.getTime()) cell.addClass('bt-cell-today');
 			} else if (this.zoomLevel === 'week') {
-				const weekEnd = new Date(col.getTime() + 6 * MS_PER_DAY);
+				const weekEnd = shiftDays(col, 6);
 				if (today >= col && today <= weekEnd) cell.addClass('bt-cell-today');
 			} else {
 				if (col.getFullYear() === today.getFullYear() && col.getMonth() === today.getMonth())
@@ -672,7 +789,34 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 			}
 		}
 
-		return rowY + ROW_HEIGHT;
+		const rowHeight = this.mobileLayout ? Math.ceil(label.getBoundingClientRect().height) + 64 : Math.max(ROW_HEIGHT, Math.ceil(label.getBoundingClientRect().height));
+		row.style.height = `${rowHeight}px`;
+		label.style.setProperty('--bt-label-height', `${this.mobileLayout ? rowHeight - 64 : rowHeight}px`);
+		this.rowHeightMap.set(item.id, rowHeight);
+		this.rowObserver.observe(label);
+		return rowY + rowHeight;
+	}
+
+	/** Keep growing editors and wrapped properties within their own timeline row. */
+	private reflowRows() {
+		if (this.dragging || !this.barsLayerEl?.isConnected) return;
+		const content = this.barsLayerEl.parentElement!;
+		const bars = new Map(Array.from(this.barsLayerEl.querySelectorAll<HTMLElement>('.bt-bar')).map(bar => [bar.dataset.itemId, bar]));
+		let y = HEADER_HEIGHT;
+		for (const row of Array.from(content.querySelectorAll<HTMLElement>(':scope > .bt-row, :scope > .bt-swimlane-hdr'))) {
+			row.style.top = `${y}px`;
+			const label = row.querySelector<HTMLElement>('.bt-row-label');
+			const height = label ? this.mobileLayout ? Math.ceil(label.getBoundingClientRect().height) + 64 : Math.max(ROW_HEIGHT, Math.ceil(label.getBoundingClientRect().height)) : GROUP_ROW_HEIGHT;
+			row.style.height = `${height}px`;
+			label?.style.setProperty('--bt-label-height', `${this.mobileLayout ? height - 64 : height}px`);
+			if (label?.dataset.itemId) {
+				this.rowHeightMap.set(label.dataset.itemId, height); this.rowYMap.set(label.dataset.itemId, y);
+				const bar = bars.get(label.dataset.itemId);
+				if (bar) bar.style.top = `${this.getBarTop(y,height)}px`;
+			}
+			y += height;
+		}
+		content.style.minHeight = `${y}px`; this.barsLayerEl.style.height = `${Math.max(0, y - HEADER_HEIGHT)}px`;
 	}
 
 	private renderTodayLine(barsLayer: HTMLElement) {
@@ -689,13 +833,15 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 			const rowY = this.rowYMap.get(item.id);
 			if (rowY === undefined) continue;
 
-			const barTop = rowY - HEADER_HEIGHT + (ROW_HEIGHT - BAR_HEIGHT) / 2;
+			const rowHeight = this.rowHeightMap.get(item.id) ?? ROW_HEIGHT;
+			const barTop = this.getBarTop(rowY,rowHeight);
 			const cw = this.getColWidth();
 			const left = this.dateToPixel(item.start);
-			const endNext = new Date(item.end.getTime() + MS_PER_DAY);
-			const width = Math.max(this.dateToPixel(endNext) - left, item.isSingleDay ? cw * 0.5 : 4);
+			const endNext = shiftDays(item.end, 1);
+			const width = Math.max(this.dateToPixel(endNext) - left, this.mobileLayout ? 44 : item.isSingleDay ? cw * 0.5 : 4);
 
 			const bar = barsLayer.createDiv('bt-bar');
+			bar.dataset.itemId = item.id;
 			bar.style.left = `${left}px`;
 			bar.style.width = `${width}px`;
 			bar.style.top = `${barTop}px`;
@@ -707,26 +853,40 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 			if (item.done) bar.addClass('bt-bar-done');
 
 			// Left resize handle
-			const handleL = bar.createDiv('bt-bar-handle bt-bar-handle-left');
-			// Done checkbox
+			const handleL = bar.createDiv('bt-bar-handle bt-bar-handle-left ca-drag-grip');
+			handleL.setAttribute('aria-label', 'Drag to resize start date');
+			handleL.title = 'Drag to resize start date';
+			// Completion button keeps its state until the save succeeds.
 			if (this.doneProp) {
-				const cb = bar.createDiv('bt-bar-check' + (item.done ? ' bt-bar-check-on' : ''));
-				cb.addEventListener('click', async (e) => {
-					e.stopPropagation();
-					const newVal = !item.done;
-					await writeProp(this.app, item.file, this.doneProp!, newVal);
-					item.done = newVal;
-					bar.toggleClass('bt-bar-done', newVal);
-					cb.toggleClass('bt-bar-check-on', newVal);
-				});
+				const completionHost = this.mobileLayout ? Array.from(this.wrap.querySelectorAll<HTMLElement>('.bt-row-label')).find(label => label.dataset.itemId === item.id) ?? bar : bar;
+				const cb = completionHost.createEl('button', { cls: 'bt-bar-check' + (item.done ? ' bt-bar-check-on' : ''), attr: { type: 'button', role: 'checkbox', 'aria-checked': String(item.done), 'aria-label': `Mark ${item.title} ${item.done ? 'incomplete' : 'complete'}` } });
+				colorCheckbox(cb, this.config, item.entry);
+				cb.onclick = async event => {
+					event.preventDefault(); event.stopPropagation(); cb.disabled = true;
+					try {
+						const value = !item.done;
+						await writeProp(this.app, item.file, this.doneProp!, value);
+						item.done = value; bar.toggleClass('bt-bar-done', value); cb.toggleClass('bt-bar-check-on', value);
+						cb.setAttribute('aria-checked', String(value)); cb.setAttribute('aria-label', `Mark ${item.title} ${value ? 'incomplete' : 'complete'}`);
+					} catch (error) { console.error(error); new Notice('Failed to update completion'); }
+					finally { cb.disabled = false; }
+				};
 			}
+
 			// Label
+			dragGrip(bar, `Drag ${item.title} to move dates`);
 			const labelEl = bar.createSpan({ cls: 'bt-bar-label', text: item.title });
 			labelEl.title = item.title;
 			// Right resize handle
-			const handleR = bar.createDiv('bt-bar-handle bt-bar-handle-right');
+			const handleR = bar.createDiv('bt-bar-handle bt-bar-handle-right ca-drag-grip');
+			handleR.setAttribute('aria-label', 'Drag to resize end date');
+			handleR.title = 'Drag to resize end date';
 
-			this.attachBarDrag(bar, handleL, handleR, labelEl, item);
+			bar.onclick = event => {
+				if ((event.target as HTMLElement).closest('.ca-drag-grip, .bt-bar-check')) return;
+				event.preventDefault();
+				void this.app.workspace.getLeaf(Keymap.isModEvent(event)).openFile(item.file);
+			};
 			this.attachBarContextMenu(bar, item);
 		}
 	}
@@ -736,172 +896,89 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 	private updateBarPosition(barEl: HTMLElement, start: Date, end: Date) {
 		const cw = this.getColWidth();
 		const left = this.dateToPixel(start);
-		const endNext = new Date(end.getTime() + MS_PER_DAY);
-		const width = Math.max(this.dateToPixel(endNext) - left, 4);
+		const endNext = shiftDays(end, 1);
+		const width = Math.max(this.dateToPixel(endNext) - left, this.mobileLayout ? 44 : 4);
 		barEl.style.left = `${left}px`;
 		barEl.style.width = `${width}px`;
 	}
 
-	private attachBarDrag(
-		bar: HTMLElement,
-		handleL: HTMLElement,
-		handleR: HTMLElement,
-		labelEl: HTMLElement,
-		item: TimelineItem,
-	) {
-		// Left resize handle
-		handleL.addEventListener('pointerdown', (e: PointerEvent) => {
-			if (e.button !== 0) return;
-			e.preventDefault();
-			e.stopPropagation();
-			handleL.setPointerCapture(e.pointerId);
-			this.dragItem = item;
-			this.dragMode = 'resize-left';
-			this.dragStartX = e.clientX;
-			this.dragStartDate = new Date(item.start);
-			this.dragEndDate = new Date(item.end);
-			this.dragBarEl = bar;
-			this.dragMoved = false;
-			bar.addClass('bt-bar-resizing');
-		});
-		handleL.addEventListener('pointermove', (e: PointerEvent) => {
-			if (this.dragMode !== 'resize-left' || this.dragItem !== item) return;
-			const deltaX = e.clientX - this.dragStartX;
-			this.dragMoved = this.dragMoved || Math.abs(deltaX) > DRAG_THRESHOLD;
-			const newStart = this.snapDate(new Date(this.dragStartDate!.getTime() + this.deltaXToMs(deltaX)));
-			if (newStart < this.dragEndDate!) this.updateBarPosition(bar, newStart, this.dragEndDate!);
-		});
-		handleL.addEventListener('pointerup', async (e: PointerEvent) => {
-			if (this.dragMode !== 'resize-left' || this.dragItem !== item) return;
-			bar.removeClass('bt-bar-resizing');
-			if (this.dragMoved) {
-				const deltaX = e.clientX - this.dragStartX;
-				const newStart = this.snapDate(new Date(this.dragStartDate!.getTime() + this.deltaXToMs(deltaX)));
-				if (newStart < this.dragEndDate! && DK(newStart) !== DK(this.dragStartDate!)) {
-					await writeProp(this.app, item.file, this.dateProp!, DK(newStart));
-					item.start = newStart;
-					item.isSingleDay = newStart.getTime() === item.end.getTime();
-					this.updateBarPosition(bar, item.start, item.end);
-				} else {
-					this.updateBarPosition(bar, item.start, item.end);
-				}
-			}
-			this.clearDragState();
-		});
-
-		// Right resize handle
-		handleR.addEventListener('pointerdown', (e: PointerEvent) => {
-			if (e.button !== 0) return;
-			e.preventDefault();
-			e.stopPropagation();
-			handleR.setPointerCapture(e.pointerId);
-			this.dragItem = item;
-			this.dragMode = 'resize-right';
-			this.dragStartX = e.clientX;
-			this.dragStartDate = new Date(item.start);
-			this.dragEndDate = new Date(item.end);
-			this.dragBarEl = bar;
-			this.dragMoved = false;
-			bar.addClass('bt-bar-resizing');
-		});
-		handleR.addEventListener('pointermove', (e: PointerEvent) => {
-			if (this.dragMode !== 'resize-right' || this.dragItem !== item) return;
-			const deltaX = e.clientX - this.dragStartX;
-			this.dragMoved = this.dragMoved || Math.abs(deltaX) > DRAG_THRESHOLD;
-			const newEnd = this.snapDate(new Date(this.dragEndDate!.getTime() + this.deltaXToMs(deltaX)));
-			if (newEnd >= this.dragStartDate!) this.updateBarPosition(bar, this.dragStartDate!, newEnd);
-		});
-		handleR.addEventListener('pointerup', async (e: PointerEvent) => {
-			if (this.dragMode !== 'resize-right' || this.dragItem !== item) return;
-			bar.removeClass('bt-bar-resizing');
-			if (this.dragMoved) {
-				const deltaX = e.clientX - this.dragStartX;
-				const newEnd = this.snapDate(new Date(this.dragEndDate!.getTime() + this.deltaXToMs(deltaX)));
-				if (newEnd >= this.dragStartDate! && DK(newEnd) !== DK(this.dragEndDate!)) {
-					if (this.endProp) {
-						await writeProp(this.app, item.file, this.endProp, DK(newEnd));
-					}
-					item.end = newEnd;
-					item.isSingleDay = item.start.getTime() === newEnd.getTime();
-					this.updateBarPosition(bar, item.start, item.end);
-				} else {
-					this.updateBarPosition(bar, item.start, item.end);
-				}
-			}
-			this.clearDragState();
-		});
-
-		// Bar body — move
-		bar.addEventListener('pointerdown', (e: PointerEvent) => {
-			if (e.button !== 0) return;
-			// Ignore if originating from a handle
-			const target = e.target as HTMLElement;
-			if (target.hasClass('bt-bar-handle') || target.hasClass('bt-bar-check')) return;
-			e.preventDefault();
-			bar.setPointerCapture(e.pointerId);
-			this.dragItem = item;
-			this.dragMode = 'move';
-			this.dragStartX = e.clientX;
-			this.dragStartDate = new Date(item.start);
-			this.dragEndDate = new Date(item.end);
-			this.dragBarEl = bar;
-			this.dragMoved = false;
-			bar.addClass('bt-bar-dragging');
-		});
-		bar.addEventListener('pointermove', (e: PointerEvent) => {
-			if (this.dragMode !== 'move' || this.dragItem !== item) return;
-			const deltaX = e.clientX - this.dragStartX;
-			this.dragMoved = this.dragMoved || Math.abs(deltaX) > DRAG_THRESHOLD;
-			if (!this.dragMoved) return;
-			const deltaMs = this.deltaXToMs(deltaX);
-			const newStart = this.snapDate(new Date(this.dragStartDate!.getTime() + deltaMs));
-			const duration = this.dragEndDate!.getTime() - this.dragStartDate!.getTime();
-			const newEnd = new Date(newStart.getTime() + duration);
-			this.updateBarPosition(bar, newStart, newEnd);
-		});
-		bar.addEventListener('pointerup', async (e: PointerEvent) => {
-			if (this.dragMode !== 'move' || this.dragItem !== item) return;
-			bar.removeClass('bt-bar-dragging');
-			if (this.dragMoved) {
-				const deltaX = e.clientX - this.dragStartX;
-				const deltaMs = this.deltaXToMs(deltaX);
-				const newStart = this.snapDate(new Date(this.dragStartDate!.getTime() + deltaMs));
-				const duration = this.dragEndDate!.getTime() - this.dragStartDate!.getTime();
-				const newEnd = new Date(newStart.getTime() + duration);
-				if (DK(newStart) !== DK(this.dragStartDate!)) {
-					await writeProp(this.app, item.file, this.dateProp!, DK(newStart));
-					if (this.endProp && !item.isSingleDay) {
-						await writeProp(this.app, item.file, this.endProp, DK(newEnd));
-					}
-					item.start = newStart;
-					item.end = newEnd;
-					this.updateBarPosition(bar, newStart, newEnd);
-				} else {
-					this.updateBarPosition(bar, item.start, item.end);
-				}
-			} else {
-				// Click — open note
-				const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as unknown as MouseEvent));
-				leaf?.openFile(item.file);
-			}
-			this.clearDragState();
-		});
-		bar.addEventListener('pointercancel', () => {
-			if (this.dragItem !== item) return;
-			bar.removeClass('bt-bar-dragging');
-			bar.removeClass('bt-bar-resizing');
-			this.updateBarPosition(bar, item.start, item.end);
-			this.clearDragState();
-		});
+	private startTimelineDrag(surface: HTMLElement, event: PointerEvent): boolean {
+		const bar = surface.classList.contains('bt-bar') ? surface : Array.from(this.wrap.querySelectorAll<HTMLElement>('.bt-bar')).find(el => el.dataset.itemId === surface.dataset.itemId);
+		if (!bar) return false;
+		const item = this.items.find(value => value.id === bar.dataset.itemId);
+		if (!item || !this.dateProp || parsePropertyId(this.dateProp).type !== 'note') return false;
+		const target = event.target as HTMLElement;
+		const mode = target.closest('.bt-bar-handle-left') ? 'resize-left' : target.closest('.bt-bar-handle-right') ? 'resize-right' : 'move';
+		if (mode !== 'move' && (!this.endProp || parsePropertyId(this.endProp).type !== 'note')) {
+			new Notice('Choose a note end-date property to resize a timeline item.'); return false;
+		}
+		this.dragging = true;
+		this.dragState = { item, bar, mode, start: new Date(item.start), end: new Date(item.end),
+			scrollLeft: this.wrap.querySelector('.bt-scroll')?.scrollLeft ?? 0,
+			nextStart: new Date(item.start), nextEnd: new Date(item.end) };
+		bar.classList.add(mode === 'move' ? 'bt-bar-dragging' : 'bt-bar-resizing');
+		return true;
 	}
 
-	private clearDragState() {
-		this.dragItem = null;
-		this.dragMode = null;
-		this.dragBarEl = null;
-		this.dragStartDate = null;
-		this.dragEndDate = null;
-		this.dragMoved = false;
+	private shiftedTimelineDate(date: Date, deltaX: number): Date {
+		const columns = deltaX / this.getColWidth();
+		if (this.zoomLevel === 'month') {
+			const shifted = new Date(date);
+			const targetMonth = new Date(date.getFullYear(), date.getMonth() + Math.round(columns), 1);
+			const last = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
+			shifted.setDate(1); shifted.setFullYear(targetMonth.getFullYear(), targetMonth.getMonth(), Math.min(date.getDate(), last));
+			return shifted;
+		}
+		return shiftDays(date, Math.round(columns) * (this.zoomLevel === 'week' ? 7 : 1));
+	}
+
+	private updateTimelineDrag(point: DragPoint) {
+		const state = this.dragState;
+		if (!state) return;
+		const scroll = this.wrap.querySelector('.bt-scroll')?.scrollLeft ?? 0;
+		const delta = point.x - point.startX + scroll - state.scrollLeft;
+		const duration = calendarDay(state.end) - calendarDay(state.start);
+		if (state.mode === 'move') {
+			state.nextStart = this.shiftedTimelineDate(state.start, delta);
+			state.nextEnd = shiftDays(state.nextStart, duration);
+		} else if (state.mode === 'resize-left') {
+			const date = this.shiftedTimelineDate(state.start, delta);
+			state.nextStart = date > state.end ? new Date(state.end) : date;
+		} else {
+			const date = this.shiftedTimelineDate(state.end, delta);
+			state.nextEnd = date < state.start ? new Date(state.start) : date;
+		}
+		this.updateBarPosition(state.bar, state.nextStart, state.nextEnd);
+		const pane = this.wrap.querySelector<HTMLElement>('.bt-scroll');
+		const bounds = this.wrap.getBoundingClientRect();
+		if (pane && point.x >= bounds.left && point.x <= bounds.right && point.y >= bounds.top && point.y <= bounds.bottom) {
+			const fmt = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+			this.dropIndicator.show(pane, state.mode === 'resize-right' ? null : state.bar, state.mode === 'resize-right' ? state.bar : null, `${fmt(state.nextStart)} – ${fmt(state.nextEnd)}`, true);
+		} else this.dropIndicator.hide();
+	}
+
+	private async commitTimelineDrag(point: DragPoint) {
+		const state = this.dragState;
+		if (!state || !this.dateProp) return;
+		const rect = this.wrap.getBoundingClientRect();
+		if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return;
+		if (DK(state.nextStart) === DK(state.start) && DK(state.nextEnd) === DK(state.end)) return;
+		const dateName = parsePropertyId(this.dateProp).name;
+		const endName = this.endProp && parsePropertyId(this.endProp).type === 'note' ? parsePropertyId(this.endProp).name : null;
+		await this.app.fileManager.processFrontMatter(state.item.file, fm => {
+			fm[dateName] = DK(state.nextStart);
+			if (endName) fm[endName] = DK(state.nextEnd);
+		});
+		state.item.start = state.nextStart; state.item.end = state.nextEnd;
+		state.item.isSingleDay = calendarDay(state.nextStart) === calendarDay(state.nextEnd);
+	}
+
+	onunload() {
+		this.pointerDrag.destroy();
+		this.rowObserver.disconnect();
+		this.paneObserver.disconnect();
+		this.dropIndicator.destroy();
+		super.onunload();
 	}
 
 	// ── Context menu ───────────────────────────────────────────────────────────
@@ -974,15 +1051,26 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 	private scrollToToday(scroll: HTMLElement, cw: number) {
 		if (!this.windowStart || !this.windowEnd) return;
 		const today = new Date(); today.setHours(0, 0, 0, 0);
-		const todayPx = LABEL_WIDTH + this.dateToPixel(today);
+		let focus = today;
+		if (this.mobileLayout && this.items.length) {
+			const ordered = [...this.items].sort((a,b)=>a.start.getTime()-b.start.getTime());
+			focus = (ordered.find(item=>item.start <= today && item.end >= today) ?? ordered.find(item=>item.start >= today) ?? ordered[ordered.length-1]).start;
+		}
+		const todayPx = (this.mobileLayout ? 0 : this.labelWidth) + this.dateToPixel(focus);
 		const targetLeft = todayPx - scroll.clientWidth / 2;
 		scroll.scrollLeft = Math.max(0, targetLeft);
+	}
+
+	private renderPropVal(parent: HTMLElement, value: Value, item: TimelineItem, pid: BasesPropertyId) {
+		new PropertyFieldRenderer(this, 'bt').render(parent, value, item, pid);
+	}
+
+	private renderPropertyText(parent: HTMLElement, text: string, item: TimelineItem) {
+		new PropertyFieldRenderer(this, 'bt').renderText(parent, text, item);
 	}
 
 	// ── Create new note ────────────────────────────────────────────────────────
 
 	private createTimelineNote() {
-		const folder = ((this.config.get('newNoteFolder') as string) ?? '').trim();
-		new QuickAddModal(this.app, this.plugin.settings, this.plugin, undefined, folder || undefined).open();
-	}
-}
+		return createViewNote(this);
+	}}

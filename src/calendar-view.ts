@@ -1,9 +1,15 @@
-import { BasesView, TFile, Notice, QueryController, HoverParent, HoverPopover, Keymap, BasesEntry, BasesPropertyId, parsePropertyId, Value, BooleanValue, StringValue, NumberValue, DateValue, TagValue, NullValue, Menu, App, Modal, Platform } from 'obsidian';
+import { viewProperty } from './view-properties';
+import { createViewNote } from './view-create';
+import { applyItemPadding } from './view-spacing';
+import { numericOrder } from './list-properties';
+import { colorCheckbox, propertyColor } from './task-appearance';
+import { BasesView, TFile, Notice, QueryController, HoverParent, HoverPopover, Keymap, BasesEntry, BasesPropertyId, parsePropertyId, Value, BooleanValue, NullValue, Menu, App, Modal, Platform } from 'obsidian';
 import BaseViewsPlugin from './main';
-import { QuickAddModal } from './quick-add-modal';
 import { AUTO_PALETTE } from './util';
 import { writeProp } from './frontmatter';
-import { createNoteInFolder } from './create-note';
+import { PropertyFieldRenderer } from './property-field';
+import { PointerDrag, DropIndicator, DragPoint, rememberScroll, dragGrip, beforeAt, moveBefore } from './drag';
+import { calendarDay, shiftDays } from './drag-dates';
 
 export const VIEW_TYPE_BASE_CALENDAR = 'base-calendar-view';
 
@@ -40,7 +46,6 @@ interface WeekInfo {
 }
 
 const DK = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-const MS_PER_DAY = 86400000;
 const LANE_HEIGHT = 16;
 const LANE_GAP = 2;
 
@@ -94,6 +99,12 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 	private weeks: WeekInfo[] = [];
 	private curDate = new Date();
 	private viewMode: ViewMode = 'month';
+	private configuredViewMode: ViewMode | null = null;
+	private mobileLayout = false;
+	private selectedDate: string | null = null;
+	private mobilePanel: HTMLElement | null = null;
+	private resizeObserver: ResizeObserver | null = null;
+	private layoutWidth = 0;
 	private titleEl: HTMLElement | null = null;
 	private bodyEl: HTMLElement | null = null;
 	private hrowEl: HTMLElement | null = null;
@@ -113,8 +124,12 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 	private autoColorMap: Record<string, string> = {};
 
 	private dragOrderId: string | null = null;
+	private pointerDrag: PointerDrag;
+	private dragging = false;
+	private dropDay: DayInfo | null = null;
+	private dropBefore: string | null = null;
 	private dragSourceDateKey: string | null = null;
-	private dropIndicator: HTMLElement | null = null;
+	private dropIndicator: DropIndicator;
 
 	private isSelecting = false;
 	private selectionStart: DayInfo | null = null;
@@ -128,20 +143,58 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		super(ctrl);
 		this.plugin = plugin;
 		this.wrap = parent.createDiv('bc-wrap');
+		this.dropIndicator = new DropIndicator(this.wrap);
+		this.pointerDrag = new PointerDrag(this.wrap, {
+			owns: element => !!this.morePopover?.contains(element),
+			items: '.bc-chip, .bc-md-bar, .bc-md-inline', ignore: 'a:not(.bc-chip-link), button, input, textarea, .bc-chip-props',
+			onStart: (item, event) => {
+				if (!this.dateProp || parsePropertyId(this.dateProp).type !== 'note') { new Notice('Select a note date property to move calendar events.'); return false; }
+				this.dragOrderId = item.dataset.eventId!;
+				this.dragSourceDateKey = item.closest<HTMLElement>('[data-calendar-date]')?.dataset.calendarDate
+					?? this.dayAtPoint(event.clientX, event.clientY)?.dateKey
+					?? this.events.find(ev => ev.id === this.dragOrderId)?.dateKey ?? null;
+				this.dragging = true;
+			},
+			onMove: (_item, point) => this.updateCalendarDrop(point),
+			onDrop: async (_item, point) => { this.updateCalendarDrop(point); await this.commitCalendarDrop(); },
+			onEnd: () => {
+				this.dragging = false; this.dragOrderId = null; this.dragSourceDateKey = null;
+				this.clearCalendarDrop(); this.closeMorePopover();
+				void this.onDataUpdated();
+			},
+			onError: error => { console.error(error); new Notice('Failed to move calendar event. The calendar has been refreshed.'); },
+		});
+		this.resizeObserver = new ResizeObserver(() => {
+			if (this.dragging) return;
+			const compact = this.useCompactLayout();
+			const width = this.wrap.getBoundingClientRect().width;
+			if (compact !== this.mobileLayout || width !== this.layoutWidth) {
+				this.layoutWidth = width; this.mobileLayout = compact; this.render();
+			}
+		});
+		this.resizeObserver.observe(this.wrap);
+
 	}
 
 	async onDataUpdated(): Promise<void> {
+		if (this.dragging) return;
+		applyItemPadding(this.wrap, this.config);
+		const restoreScroll = rememberScroll(this.wrap, ['.bc-body', '.bc-compact-week-strip']);
+		this.mobileLayout = this.useCompactLayout();
 		this.events = [];
 		this.wrap.empty();
 
-		this.dateProp = this.config.getAsPropertyId('dateProperty') ?? null;
-		this.endProp = this.config.getAsPropertyId('endDateProperty') ?? null;
-		this.doneProp = this.config.getAsPropertyId('doneProperty') ?? null;
+		this.dateProp = viewProperty(this.config, 'dateProperty') ?? null;
+		this.endProp = viewProperty(this.config, 'endDateProperty') ?? null;
+		const done = viewProperty(this.config, 'doneProperty');
+		this.doneProp = done && parsePropertyId(done).type === 'note' ? done : null;
 		this.propOrder = this.config.getOrder();
 
 		const cfgMode = this.config.get('viewMode');
-		if (cfgMode === 'month' || cfgMode === 'week' || cfgMode === 'agenda') {
-			this.viewMode = cfgMode;
+		const defaultMode: ViewMode = cfgMode === 'week' || cfgMode === 'agenda' ? cfgMode : 'month';
+		if (this.configuredViewMode !== defaultMode) {
+			this.configuredViewMode = defaultMode;
+			this.viewMode = defaultMode;
 		}
 		const mpd = this.config.get('maxPerDay');
 		if (typeof mpd === 'number' && mpd >= 1) this.maxPerDay = Math.floor(mpd);
@@ -153,11 +206,12 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		if (typeof wd === 'number' && wd >= 1) this.weekDays = Math.min(10, Math.floor(wd));
 		this.weekRolling = !!this.config.get('weekRolling');
 
-		const sop = this.config.getAsPropertyId('sortOrderProperty');
-		this.sortOrderProp = sop ? parsePropertyId(sop).name : null;
+		const sop = viewProperty(this.config, 'sortOrderProperty');
+		this.sortOrderProp = sop && parsePropertyId(sop).type === 'note' ? parsePropertyId(sop).name : null;
 
 		this.buildUI(this.wrap);
 		await this.loadData();
+		restoreScroll();
 	}
 
 	private resolveBgUrl(raw: string): string {
@@ -177,17 +231,17 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		const hdr = container.createDiv('bc-hdr');
 		const nav = hdr.createDiv('bc-nav');
 
-		const prev = nav.createEl('button', { cls: 'bc-btn' });
+		const prev = nav.createEl('button', { cls: 'bc-btn', attr: { 'aria-label': 'Previous period', title: 'Previous period' } });
 		prev.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
 
 		const today = nav.createEl('button', { text: 'Today', cls: 'bc-today' });
 
-		const next = nav.createEl('button', { cls: 'bc-btn' });
+		const next = nav.createEl('button', { cls: 'bc-btn', attr: { 'aria-label': 'Next period', title: 'Next period' } });
 		next.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
 
 		this.titleEl = hdr.createEl('h2', { cls: 'bc-title' });
 
-		const modeGroup = hdr.createDiv('bc-mode-group');
+		const modeGroup = hdr.createDiv({ cls: 'bc-mode-group', attr: { role: 'group', 'aria-label': 'Calendar view' } });
 		const mMonth = modeGroup.createEl('button', { text: 'Month', cls: 'bc-mode' });
 		const mWeek = modeGroup.createEl('button', { text: 'Week', cls: 'bc-mode' });
 		const mAgenda = modeGroup.createEl('button', { text: 'Agenda', cls: 'bc-mode' });
@@ -198,18 +252,20 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
 
 		prev.onclick = () => {
+			this.selectedDate = null;
 			if (this.viewMode === 'month') this.curDate = new Date(this.curDate.getFullYear(), this.curDate.getMonth() - 1, 1);
-			else if (this.viewMode === 'week') this.curDate = new Date(this.curDate.getTime() - this.weekDays * MS_PER_DAY);
-			else this.curDate = new Date(this.curDate.getTime() - this.agendaDays * MS_PER_DAY);
+			else if (this.viewMode === 'week') this.curDate = shiftDays(this.curDate, -(this.weekDays));
+			else this.curDate = shiftDays(this.curDate, -(this.agendaDays));
 			this.render();
 		};
 		next.onclick = () => {
+			this.selectedDate = null;
 			if (this.viewMode === 'month') this.curDate = new Date(this.curDate.getFullYear(), this.curDate.getMonth() + 1, 1);
-			else if (this.viewMode === 'week') this.curDate = new Date(this.curDate.getTime() + this.weekDays * MS_PER_DAY);
-			else this.curDate = new Date(this.curDate.getTime() + this.agendaDays * MS_PER_DAY);
+			else if (this.viewMode === 'week') this.curDate = shiftDays(this.curDate, this.weekDays);
+			else this.curDate = shiftDays(this.curDate, this.agendaDays);
 			this.render();
 		};
-		today.onclick = () => { this.curDate = new Date(); this.render(); };
+		today.onclick = () => { this.curDate = new Date(); this.selectedDate = DK(this.curDate); this.render(); };
 
 		const grid = container.createDiv('bc-grid');
 
@@ -280,16 +336,20 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 	}
 
 	private render() {
+		if (this.dragging) return;
 		if (!this.titleEl || !this.bodyEl || !this.hrowEl) return;
 		this.closeMorePopover();
 		this.bodyEl.empty();
 		this.hrowEl.empty();
 		this.days = [];
 		this.weeks = [];
+		this.mobilePanel = null;
+		this.wrap.toggleClass('bc-compact', this.mobileLayout && this.viewMode !== 'agenda');
 
 		if (this.modeButtons) {
 			Object.entries(this.modeButtons).forEach(([k, btn]) => {
 				btn.toggleClass('bc-mode-active', k === this.viewMode);
+				btn.setAttribute('aria-pressed', String(k === this.viewMode));
 			});
 		}
 
@@ -301,11 +361,13 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
 		if (this.viewMode === 'month') {
 			this.bodyEl.addClass('bc-body-month');
-			if (this.monthExpand) this.bodyEl.addClass('bc-body-month-expand');
-			this.renderMonth();
+			if (this.monthExpand && !this.mobileLayout) this.bodyEl.addClass('bc-body-month-expand');
+			if (this.mobileLayout) this.renderCompactMonth();
+			else this.renderMonth();
 		} else if (this.viewMode === 'week') {
 			this.bodyEl.addClass('bc-body-week');
-			this.renderWeek();
+			if (this.mobileLayout) this.renderCompactWeek();
+			else this.renderWeek();
 		} else {
 			this.bodyEl.addClass('bc-body-agenda');
 			this.hrowEl.style.display = 'none';
@@ -313,6 +375,122 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		}
 
 		this.placeEvents();
+	}
+
+	private useCompactLayout(): boolean {
+		const width = this.wrap.getBoundingClientRect().width;
+		const touch = Platform.isMobile || this.wrap.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches;
+		return !!touch && width > 0 && width <= 700;
+	}
+
+	private compactDay(parent: HTMLElement, date: Date, currentMonth = true): DayInfo {
+		const today = DK(new Date());
+		const key = DK(date);
+		const cell = parent.createEl('button', {
+			cls: 'bc-compact-date' + (key === today ? ' bc-compact-today' : '') + (!currentMonth ? ' bc-compact-other' : ''),
+			attr: { type: 'button', 'aria-label': date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) },
+		});
+		cell.dataset.calendarDate = key;
+		if (this.viewMode === 'week') cell.createSpan({ cls: 'bc-compact-dow', text: date.toLocaleDateString('en-US', { weekday: 'short' }) });
+		const number = cell.createSpan({ cls: 'bc-compact-number', text: String(date.getDate()) });
+		cell.createSpan({ cls: 'bc-compact-count' });
+		cell.onclick = event => {
+			event.preventDefault(); event.stopPropagation();
+			this.selectedDate = key;
+			this.refreshCompactDays(); this.renderCompactPanel();
+		};
+		const day: DayInfo = { dateKey: key, date, weekIdx: 0, colIdx: 0, isCurrentMonth: currentMonth, isToday: key === today,
+			cell, numEl: number, evList: null, events: [] };
+		this.days.push(day);
+		return day;
+	}
+
+	private chooseCompactDay() {
+		if (this.days.some(day => day.dateKey === this.selectedDate)) return;
+		const preferred = DK(this.curDate);
+		this.selectedDate = this.days.find(day => day.dateKey === preferred)?.dateKey
+			?? this.days.find(day => day.isToday && day.isCurrentMonth)?.dateKey
+			?? this.days.find(day => day.isCurrentMonth)?.dateKey ?? null;
+	}
+
+	private renderCompactMonth() {
+		if (!this.bodyEl || !this.hrowEl || !this.titleEl) return;
+		this.titleEl.textContent = this.curDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+		this.hrowEl.style.setProperty('--bc-cols', '7');
+		['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(name => this.hrowEl!.createDiv({ cls: 'bc-dname', text: name }));
+		const grid = this.bodyEl.createDiv('bc-compact-month-grid');
+		const first = new Date(this.curDate.getFullYear(), this.curDate.getMonth(), 1);
+		const start = shiftDays(first, -first.getDay());
+		const last = new Date(this.curDate.getFullYear(), this.curDate.getMonth() + 1, 0);
+		const cells = Math.ceil((first.getDay() + last.getDate()) / 7) * 7;
+		for (let i = 0; i < cells; i++) {
+			const date = shiftDays(start, i);
+			this.compactDay(grid, date, date.getMonth() === this.curDate.getMonth());
+		}
+		this.chooseCompactDay();
+		this.mobilePanel = this.bodyEl.createDiv('bc-compact-panel');
+	}
+
+	private renderCompactWeek() {
+		if (!this.bodyEl || !this.hrowEl || !this.titleEl) return;
+		this.hrowEl.style.display = 'none';
+		const current = new Date(this.curDate); current.setHours(0, 0, 0, 0);
+		const start = this.weekRolling ? current : shiftDays(current, -current.getDay());
+		const end = shiftDays(start, this.weekDays - 1);
+		const fmt = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+		this.titleEl.textContent = `${fmt(start)} — ${fmt(end)}, ${end.getFullYear()}`;
+		const strip = this.bodyEl.createDiv('bc-compact-week-strip');
+		for (let i = 0; i < this.weekDays; i++) this.compactDay(strip, shiftDays(start, i));
+		this.chooseCompactDay();
+		this.mobilePanel = this.bodyEl.createDiv('bc-compact-panel');
+	}
+
+	private refreshCompactDays() {
+		for (const day of this.days) {
+			const selected = day.dateKey === this.selectedDate;
+			day.cell?.toggleClass('bc-compact-selected', selected);
+			day.cell?.setAttribute('aria-pressed', String(selected));
+			const count = day.cell?.querySelector<HTMLElement>('.bc-compact-count');
+			if (count) {
+				count.textContent = day.events.length ? String(day.events.length) : '';
+				count.setAttribute('aria-hidden', 'true');
+			}
+			const label = day.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+			day.cell?.setAttribute('aria-label', `${label}, ${day.events.length} ${day.events.length === 1 ? 'event' : 'events'}`);
+		}
+		if (this.viewMode === 'week') {
+			const selected = this.days.find(day => day.dateKey === this.selectedDate)?.cell;
+			const strip = selected?.parentElement;
+			if (selected && strip) strip.scrollLeft = Math.max(0, selected.offsetLeft - strip.clientWidth / 2 + selected.offsetWidth / 2);
+		}
+	}
+
+	private renderCompactPanel() {
+		if (!this.mobilePanel) return;
+		this.mobilePanel.empty();
+		this.days.forEach(day => { day.evList = null; });
+		const day = this.days.find(value => value.dateKey === this.selectedDate);
+		if (!day) return;
+		this.mobilePanel.dataset.calendarDate = day.dateKey;
+		const header = this.mobilePanel.createDiv('bc-compact-panel-header');
+		header.createEl('h3', { text: day.date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) });
+		const add = header.createEl('button', { text: '+ Add note', cls: 'bc-compact-add', attr: { type: 'button', 'aria-label': `Add note for ${day.dateKey}` } });
+		add.onclick = event => { event.stopPropagation(); this.createNote(day.date, null); };
+		day.evList = this.mobilePanel.createDiv('bc-compact-events');
+		if (!day.events.length) day.evList.createDiv({ cls: 'bc-compact-empty', text: 'No events for this day' });
+		else this.renderDayChips(day.evList, day.events);
+	}
+
+	private placeCompactEvents() {
+		for (const day of this.days) {
+			day.events = this.events.filter(event => calendarDay(day.date) >= calendarDay(event.start)
+				&& calendarDay(day.date) <= calendarDay(event.end ?? event.start));
+			const saved = this.plugin.settings.localOrder[day.dateKey] ?? [];
+			const rank = new Map(saved.map((id, index) => [id, index]));
+			if (saved.length) day.events.sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+			else if (this.sortOrderProp) day.events.sort((a, b) => numericOrder(a.entry.getValue(`note.${this.sortOrderProp}`)?.toString()) - numericOrder(b.entry.getValue(`note.${this.sortOrderProp}`)?.toString()));
+		}
+		this.refreshCompactDays(); this.renderCompactPanel();
 	}
 
 	private renderMonth() {
@@ -366,10 +544,10 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		} else {
 			// Fixed: start from Sunday of current week
 			const cur = new Date(this.curDate); cur.setHours(0,0,0,0);
-			weekStart = new Date(cur.getTime() - cur.getDay() * MS_PER_DAY);
+			weekStart = shiftDays(cur, -(cur.getDay()));
 		}
 
-		const weekEnd = new Date(weekStart.getTime() + (this.weekDays - 1) * MS_PER_DAY);
+		const weekEnd = shiftDays(weekStart, (this.weekDays - 1));
 
 		const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 		this.titleEl.textContent = `${fmt(weekStart)} — ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
@@ -380,7 +558,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
 		// Generate day headers from actual dates
 		for (let c = 0; c < this.weekDays; c++) {
-			const dt = new Date(weekStart.getTime() + c * MS_PER_DAY);
+			const dt = shiftDays(weekStart, c);
 			const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
 			this.hrowEl.createEl('div', { text: dayName, cls: 'bc-dname' });
 		}
@@ -388,7 +566,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		const weekRow = this.bodyEl.createDiv('bc-week');
 		const weekDays: DayInfo[] = [];
 		for (let c = 0; c < this.weekDays; c++) {
-			const dt = new Date(weekStart.getTime() + c * MS_PER_DAY);
+			const dt = shiftDays(weekStart, c);
 			dt.setHours(0,0,0,0);
 			const info = this.makeCell(weekRow, dt, 0, c, today, true);
 			weekDays.push(info);
@@ -401,13 +579,13 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		if (!this.titleEl || !this.bodyEl) return;
 		const today = new Date(); today.setHours(0,0,0,0);
 		const start = new Date(this.curDate); start.setHours(0,0,0,0);
-		const end = new Date(start.getTime() + (this.agendaDays - 1) * MS_PER_DAY);
+		const end = shiftDays(start, (this.agendaDays - 1));
 
 		const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 		this.titleEl.textContent = `${fmt(start)} — ${fmt(end)}, ${end.getFullYear()}`;
 
 		for (let i = 0; i < this.agendaDays; i++) {
-			const dt = new Date(start.getTime() + i * MS_PER_DAY); dt.setHours(0,0,0,0);
+			const dt = shiftDays(start, i); dt.setHours(0,0,0,0);
 			const dk = DK(dt);
 			const isT = dt.getTime() === today.getTime();
 			const section = this.bodyEl.createDiv('bc-agenda-day' + (isT ? ' bc-agenda-today' : ''));
@@ -482,8 +660,11 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 	}
 
 	private placeEvents() {
+		if (this.mobileLayout && this.viewMode !== 'agenda') { this.placeCompactEvents(); return; }
 		this.days.forEach(d => { d.events = []; });
-		this.weeks.forEach(wk => { if (wk.overlay) wk.overlay.empty(); });
+		this.weeks.forEach(wk => {
+			if (wk.overlay) { wk.overlay.empty(); wk.overlay.parentElement!.style.minHeight = ''; }
+		});
 
 		const isAgenda = this.viewMode === 'agenda';
 		const singleDayByDate = new Map<string, CalEvent[]>();
@@ -528,8 +709,8 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
 				const segStartT = Math.max(evStartT, weekStartT);
 				const segEndT = Math.min(evEndT, weekEndT);
-				const startCol = Math.round((segStartT - weekStartT) / MS_PER_DAY);
-				const endCol = Math.round((segEndT - weekStartT) / MS_PER_DAY);
+				const startCol = calendarDay(new Date(segStartT)) - calendarDay(new Date(weekStartT));
+				const endCol = calendarDay(new Date(segEndT)) - calendarDay(new Date(weekStartT));
 				multiByWeek[wIdx].push({
 					ev, startCol, endCol,
 					isStart: evStartT >= weekStartT,
@@ -557,8 +738,8 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 				evs = [...evs].sort((a, b) => {
 					const va = a.entry.getValue(`note.${this.sortOrderProp}` as BasesPropertyId);
 					const vb = b.entry.getValue(`note.${this.sortOrderProp}` as BasesPropertyId);
-					const na = va && !(va instanceof NullValue) ? parseFloat(va.toString()) : Infinity;
-					const nb = vb && !(vb instanceof NullValue) ? parseFloat(vb.toString()) : Infinity;
+					const na = numericOrder(va?.toString());
+					const nb = numericOrder(vb?.toString());
 					return na - nb;
 				});
 			}
@@ -580,7 +761,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 				// Hover popover support
 				let hoverTimer: number | null = null;
 				d.cell!.addEventListener('mouseenter', () => {
-					if (this.morePopover) return; // already open (click-pinned)
+					if (this.morePopover || this.dragging) return; // already open (click-pinned)
 					hoverTimer = window.setTimeout(() => this.openMorePopover(d, more, true), 200);
 				});
 				d.cell!.addEventListener('mouseleave', () => {
@@ -603,6 +784,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 						const day = wk.days[col];
 						if (!day?.evList) continue;
 						const bar = day.evList.createDiv('bc-md-inline');
+						bar.dataset.eventId = seg.ev.id;
 						const color = this.getEventColor(seg.ev);
 						if (color) {
 							bar.style.background = `color-mix(in srgb, ${color} 60%, var(--background-primary))`;
@@ -610,11 +792,12 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 							bar.style.background = `color-mix(in srgb, var(--interactive-accent) 35%, var(--background-primary))`;
 						}
 						if (col === seg.startCol) {
-							bar.textContent = seg.ev.title;
+							bar.createSpan({ text: seg.ev.title });
 							bar.title = seg.ev.title;
 						} else {
 							bar.style.opacity = '0.6';
 						}
+						dragGrip(bar, `Drag ${seg.ev.title} to move dates`);
 						bar.onclick = (e) => {
 							e.stopPropagation();
 							const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
@@ -643,14 +826,21 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 				assigned.push(lane);
 			}
 
-			const laneCount = lanes.length;
-			const overlayHeight = laneCount * LANE_HEIGHT + (laneCount - 1) * LANE_GAP;
-			wk.overlay.style.height = `${overlayHeight}px`;
-
-			segs.forEach((seg, i) => {
-				const lane = assigned[i];
-				this.makeMultiDayBar(wk.overlay!, seg, lane);
+			const laneHeights = lanes.map(() => this.getLaneHeight());
+			const bars = segs.map((seg, i) => {
+				const bar = this.makeMultiDayBar(wk.overlay!, seg, assigned[i]);
+				laneHeights[assigned[i]] = Math.max(laneHeights[assigned[i]], Math.ceil(bar.getBoundingClientRect().height));
+				return bar;
 			});
+			let overlayHeight = 0;
+			laneHeights.forEach((height, lane) => {
+				bars.forEach((bar, i) => { if (assigned[i] === lane) { bar.style.top = `${overlayHeight}px`; bar.style.height = `${height}px`; } });
+				overlayHeight += height + LANE_GAP;
+			});
+			overlayHeight -= LANE_GAP;
+			wk.overlay.style.height = `${overlayHeight}px`;
+			// Keep taller wrapped lanes within their own week instead of covering the next one.
+			wk.overlay.parentElement!.style.minHeight = `${overlayHeight + 40}px`;
 
 			wk.days.forEach(d => {
 				if (d.evList) d.evList.style.paddingTop = `${overlayHeight + 4}px`;
@@ -693,17 +883,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 	}
 
 	private getEventColor(ev: CalEvent): string | null {
-		const viewProp = this.getColorPropName();
-		if (!viewProp) return null;
-
-		const pid = `note.${viewProp}` as BasesPropertyId;
-		const val = ev.entry.getValue(pid);
-		if (val && !(val instanceof NullValue)) {
-			const valStr = val.toString().trim();
-			const viewMap = this.getViewColorMap();
-			return viewMap[valStr] ?? this.autoColorMap[valStr] ?? null;
-		}
-		return null;
+		return propertyColor(this.config, ev.entry);
 	}
 
 	private getColorPropName(): string {
@@ -712,10 +892,17 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		return raw.startsWith('note.') ? raw.slice(5) : raw;
 	}
 
+	private getLaneHeight(): number {
+		return Platform.isMobile || this.wrap.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches ? 32 : LANE_HEIGHT;
+	}
+
 	private makeMultiDayBar(overlay: HTMLElement, seg: { ev: CalEvent; startCol: number; endCol: number; isStart: boolean; isEnd: boolean }, lane: number) {
 		const bar = overlay.createDiv('bc-md-bar' + (seg.ev.done ? ' bc-md-done' : ''));
+		bar.dataset.eventId = seg.ev.id;
+		bar.style.minHeight = `${this.getLaneHeight()}px`;
+		dragGrip(bar, `Drag ${seg.ev.title} to move dates`);
 		bar.style.gridColumn = `${seg.startCol + 1} / ${seg.endCol + 2}`;
-		bar.style.top = `${lane * (LANE_HEIGHT + LANE_GAP)}px`;
+		bar.style.top = `${lane * (this.getLaneHeight() + LANE_GAP)}px`;
 		if (!seg.isStart) bar.addClass('bc-md-cont-left');
 		if (!seg.isEnd) bar.addClass('bc-md-cont-right');
 
@@ -726,14 +913,25 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		}
 
 		if (this.doneProp) {
-			const cb = bar.createDiv('bc-md-check' + (seg.ev.done ? ' bc-md-check-on' : ''));
+			const cb = bar.createEl('button', { cls: 'bc-md-check' + (seg.ev.done ? ' bc-md-check-on' : ''),
+				attr: { type: 'button', role: 'checkbox', 'aria-checked': String(seg.ev.done), 'aria-label': `Mark ${seg.ev.title} ${seg.ev.done ? 'incomplete' : 'complete'}` } });
+			colorCheckbox(cb, this.config, seg.ev.entry);
 			cb.onclick = async (e) => {
 				e.stopPropagation();
 				const newVal = !seg.ev.done;
-				await writeProp(this.app, seg.ev.file, this.doneProp!, newVal);
+				cb.disabled = true;
+				try {
+					await writeProp(this.app, seg.ev.file, this.doneProp!, newVal);
+				} catch (err) {
+					console.error(err);
+					new Notice('Failed to update completion');
+					return;
+				} finally { cb.disabled = false; }
 				seg.ev.done = newVal;
 				bar.toggleClass('bc-md-done', newVal);
 				cb.toggleClass('bc-md-check-on', newVal);
+				cb.setAttribute('aria-checked', String(newVal));
+				cb.setAttribute('aria-label', `Mark ${seg.ev.title} ${newVal ? 'incomplete' : 'complete'}`);
 			};
 		}
 
@@ -753,24 +951,12 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 			e.stopPropagation();
 			this.showContextMenu(e, seg.ev);
 		});
-
-		bar.setAttribute('draggable', 'true');
-		bar.addEventListener('dragstart', e => {
-			e.dataTransfer?.setData('text/plain', seg.ev.id);
-			e.dataTransfer!.effectAllowed = 'move';
-			this.dragOrderId = seg.ev.id;
-			this.dragSourceDateKey = seg.ev.dateKey;
-			setTimeout(() => bar.addClass('bc-dragging'), 0);
-		});
-		bar.addEventListener('dragend', () => {
-			bar.removeClass('bc-dragging');
-			this.dragOrderId = null;
-			this.dragSourceDateKey = null;
-		});
+		return bar;
 	}
 
 	private makeChip(container: HTMLElement, ev: CalEvent) {
 		const chip = container.createDiv('bc-chip' + (ev.done ? ' bc-chip-done' : ''));
+		chip.dataset.eventId = ev.id;
 		const color = this.getEventColor(ev);
 		if (color) {
 			chip.style.borderLeft = `2px solid ${color}`;
@@ -778,21 +964,34 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		}
 
 		const titleRow = chip.createDiv('bc-chip-title');
+		dragGrip(titleRow, `Drag ${ev.title} to move or reorder`);
 
 		if (this.doneProp) {
-			const cb = titleRow.createDiv('bc-check' + (ev.done ? ' bc-check-on' : ''));
+			const cb = titleRow.createEl('button', { cls: 'bc-check' + (ev.done ? ' bc-check-on' : ''),
+				attr: { type: 'button', role: 'checkbox', 'aria-checked': String(ev.done), 'aria-label': `Mark ${ev.title} ${ev.done ? 'incomplete' : 'complete'}` } });
+			colorCheckbox(cb, this.config, ev.entry);
 			cb.onclick = async (e) => {
 				e.preventDefault();
 				e.stopPropagation();
 				const newVal = !ev.done;
-				await writeProp(this.app, ev.file, this.doneProp!, newVal);
+				cb.disabled = true;
+				try {
+					await writeProp(this.app, ev.file, this.doneProp!, newVal);
+				} catch (err) {
+					console.error(err);
+					new Notice('Failed to update completion');
+					return;
+				} finally { cb.disabled = false; }
 				ev.done = newVal;
 				chip.toggleClass('bc-chip-done', newVal);
 				cb.toggleClass('bc-check-on', newVal);
+				cb.setAttribute('aria-checked', String(newVal));
+				cb.setAttribute('aria-label', `Mark ${ev.title} ${newVal ? 'incomplete' : 'complete'}`);
 			};
 		}
 
 		const link = titleRow.createEl('a', { text: ev.title, cls: 'bc-chip-link', href: '#' });
+		link.draggable = false;
 		link.title = ev.title;
 		link.onclick = e => {
 			e.preventDefault();
@@ -805,12 +1004,21 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 		};
 
 		chip.onclick = e => {
-			if ((e.target as HTMLElement).closest('.bc-check')) return;
+			if ((e.target as HTMLElement).closest('button, input, textarea, a, .bc-chip-props')) return;
 			e.preventDefault();
 			e.stopPropagation();
 			const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
 			leaf?.openFile(ev.file);
 		};
+
+		chip.addEventListener('mousedown', e => {
+			if (e.button === 1 && !(e.target as HTMLElement).closest('.bc-chip-props, button, input, textarea')) e.preventDefault();
+		});
+		chip.addEventListener('auxclick', e => {
+			if (e.button !== 1 || (e.target as HTMLElement).closest('.bc-chip-props, button, input, textarea')) return;
+			e.preventDefault(); e.stopPropagation();
+			void this.app.workspace.getLeaf('tab').openFile(ev.file);
+		});
 
 		chip.addEventListener('contextmenu', e => {
 			e.preventDefault();
@@ -829,32 +1037,22 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
 		chip.addEventListener('dblclick', e => { e.stopPropagation(); });
 
+		if (this.mobileLayout && this.viewMode !== 'agenda' && ev.end && calendarDay(ev.end) > calendarDay(ev.start)) {
+			const fmt = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+			chip.createDiv({ cls: 'bc-compact-event-range', text: `${fmt(ev.start)} — ${fmt(ev.end)}` });
+		}
 		const props = chip.createDiv('bc-chip-props');
 		this.propOrder.forEach(pid => {
-			const { name } = parsePropertyId(pid);
-			if (name === 'name') return;
+			if (pid === 'file.name') return;
 			if (this.doneProp && pid === this.doneProp) return;
 			const val = ev.entry.getValue(pid);
-			if (!val || val instanceof NullValue) return;
+			if ((!val || val instanceof NullValue) && parsePropertyId(pid).type !== 'note') return;
 			const row = props.createDiv('bc-prop-row');
 			row.createSpan({ cls: 'bc-prop-label', text: this.config.getDisplayName(pid) + ': ' });
-			this.renderPropVal(row, val, ev, pid);
+			this.renderPropVal(row, val ?? new NullValue(), ev, pid);
 		});
 
-		chip.setAttribute('draggable', 'true');
-		chip.addEventListener('dragstart', e => {
-			e.dataTransfer?.setData('text/plain', ev.id);
-			e.dataTransfer!.effectAllowed = 'move';
-			this.dragOrderId = ev.id;
-			this.dragSourceDateKey = ev.dateKey;
-			setTimeout(() => chip.addClass('bc-dragging'), 0);
-		});
-		chip.addEventListener('dragend', () => {
-			chip.removeClass('bc-dragging');
-			this.dragOrderId = null;
-			this.dragSourceDateKey = null;
-			this.removeDropIndicator();
-		});
+
 	}
 
 	private showContextMenu(e: MouseEvent, ev: CalEvent) {
@@ -903,11 +1101,14 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 	private openMorePopover(day: DayInfo, anchor: HTMLElement, isHover: boolean) {
 		this.closeMorePopover();
 		const pop = document.body.createDiv('bc-more-popover');
+		pop.classList.toggle('ca-touch-drag', this.wrap.classList.contains('ca-touch-drag'));
+		applyItemPadding(pop, this.config);
 		this.morePopover = pop;
 
 		const title = pop.createDiv('bc-more-title');
 		title.textContent = day.date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 		const list = pop.createDiv('bc-more-list');
+		pop.dataset.calendarDate = day.dateKey;
 		this.renderDayChips(list, day.events);
 
 		const rect = anchor.getBoundingClientRect();
@@ -933,7 +1134,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 			let insidePop = false;
 
 			const checkClose = () => {
-				if (!insideCell && !insidePop) this.closeMorePopover();
+				if (!this.dragging && !insideCell && !insidePop) this.closeMorePopover();
 			};
 
 			if (cellEl) {
@@ -945,7 +1146,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 			pop.addEventListener('mouseleave', () => { insidePop = false; setTimeout(checkClose, 50); });
 		} else {
 			const handler = (e: MouseEvent) => {
-				if (!this.morePopover) return;
+				if (!this.morePopover || this.dragging) return;
 				if (this.morePopover.contains(e.target as Node)) return;
 				this.closeMorePopover();
 			};
@@ -966,180 +1167,118 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 	}
 
 	private renderPropVal(parent: HTMLElement, val: Value, ev: CalEvent, pid: BasesPropertyId) {
-		if (val instanceof BooleanValue) {
-			const checked = val.isTruthy();
-			const tog = parent.createEl('div', { cls: 'bc-toggle' + (checked ? ' bc-toggle-on' : '') });
-			tog.createEl('div', { cls: 'bc-toggle-knob' });
-			tog.onclick = async (e) => {
-				e.stopPropagation();
-				const newVal = !checked;
-				await writeProp(this.app, ev.file, pid, newVal);
-				tog.toggleClass('bc-toggle-on', newVal);
-			};
-		} else if (val instanceof StringValue || val instanceof NumberValue || val instanceof TagValue || val instanceof DateValue) {
-			const span = parent.createSpan({ cls: 'bc-prop-val', text: val.toString() });
-			span.onclick = (e) => {
-				e.stopPropagation();
-				const raw = val.toString();
-				const isDate = val instanceof DateValue;
-				const hasTime = isDate && raw.includes('T');
-				const input = parent.createEl('input', {
-					cls: 'bc-prop-input',
-					type: isDate ? (hasTime ? 'datetime-local' : 'date') : 'text',
-				});
-				input.value = isDate ? raw.slice(0, hasTime ? 16 : 10) : raw;
-				span.style.display = 'none';
-				input.focus();
-				if (!isDate) input.select();
-				let settled = false;
-				const commit = async () => {
-					if (settled) return;
-					settled = true;
-					await writeProp(this.app, ev.file, pid, input.value);
-					input.remove();
-					span.style.display = '';
-				};
-				const cancel = () => {
-					if (settled) return;
-					settled = true;
-					input.remove();
-					span.style.display = '';
-				};
-				input.onblur = () => void commit();
-				input.onkeydown = ke => {
-					if (ke.key === 'Enter') { ke.preventDefault(); void commit(); }
-					if (ke.key === 'Escape') { ke.preventDefault(); cancel(); }
-				};
-			};
-		} else {
-			parent.createSpan({ cls: 'bc-prop-val', text: val.toString() });
-		}
+		new PropertyFieldRenderer(this, 'bc').render(parent, val, ev, pid);
 	}
 
-	private positionDropIndicator(e: DragEvent, evList: HTMLElement) {
-		if (!this.dropIndicator) {
-			this.dropIndicator = document.createElement('div');
-			this.dropIndicator.className = 'bc-drop-line';
-		}
-		const chips = Array.from(evList.querySelectorAll('.bc-chip'));
-		let before: HTMLElement | null = null;
-		for (const c of chips) {
-			const rect = (c as HTMLElement).getBoundingClientRect();
-			if (e.clientY < rect.top + rect.height / 2) { before = c as HTMLElement; break; }
-		}
-		if (before) evList.insertBefore(this.dropIndicator, before);
-		else evList.appendChild(this.dropIndicator);
+	private renderPropertyText(parent: HTMLElement, raw: string, ev: CalEvent) {
+		new PropertyFieldRenderer(this, 'bc').renderText(parent, raw, ev);
 	}
 
-	private removeDropIndicator() {
-		if (this.dropIndicator && this.dropIndicator.parentNode) {
-			this.dropIndicator.parentNode.removeChild(this.dropIndicator);
-		}
+	private attachDropTarget(cell: HTMLElement, _list: HTMLElement, info: DayInfo) {
+		cell.dataset.calendarDate = info.dateKey;
 	}
 
-	private attachDropTarget(cellEl: HTMLElement, listEl: HTMLElement, info: DayInfo) {
-		cellEl.addEventListener('dragover', e => {
-			e.preventDefault();
-			e.dataTransfer!.dropEffect = 'move';
-			cellEl.addClass('bc-drop');
-			this.positionDropIndicator(e, listEl);
-		});
-		cellEl.addEventListener('dragleave', e => {
-			if (!cellEl.contains(e.relatedTarget as Node)) {
-				cellEl.removeClass('bc-drop');
-				this.removeDropIndicator();
-			}
-		});
-		cellEl.addEventListener('drop', async e => {
-			e.preventDefault();
-			cellEl.removeClass('bc-drop');
-			const id = e.dataTransfer?.getData('text/plain');
-			if (!id) return;
-			if (this.dragSourceDateKey === info.dateKey) {
-				await this.reorderEvent(id, listEl);
-			} else {
-				this.removeDropIndicator();
-				await this.moveEvent(id, info.date);
-			}
-			this.dragOrderId = null;
-			this.dragSourceDateKey = null;
-		});
+	private dayAtPoint(x: number, y: number): DayInfo | null {
+		const hit = this.wrap.ownerDocument.elementFromPoint(x, y);
+		if (!hit || (!this.wrap.contains(hit) && !this.morePopover?.contains(hit))) return null;
+		const date = hit.closest<HTMLElement>('[data-calendar-date]')?.dataset.calendarDate;
+		if (date) return this.days.find(day => day.dateKey === date) ?? null;
+		// Spanning bars overlay multiple cells; hit-test each cell beneath the overlay.
+		return this.days.find(day => {
+			const rect = day.cell?.getBoundingClientRect();
+			return rect && x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+		}) ?? null;
 	}
 
-	private async reorderEvent(dragId: string, evList: HTMLElement) {
-		const chips = Array.from(evList.querySelectorAll('.bc-chip')) as HTMLElement[];
-		const indicatorIdx = this.dropIndicator ? Array.from(evList.children).indexOf(this.dropIndicator) : chips.length;
-		this.removeDropIndicator();
+	private clearCalendarDrop() {
+		this.dropDay?.cell?.classList.remove('bc-drop');
+		this.dropDay = null; this.dropBefore = null;
+		this.dropIndicator.hide();
+	}
 
-		const day = this.days.find(d => d.evList === evList);
+	private updateCalendarDrop(point: DragPoint) {
+		this.clearCalendarDrop();
+		const day = this.dayAtPoint(point.x, point.y);
 		if (!day) return;
+		this.dropDay = day;
+		day.cell?.classList.add('bc-drop');
+		const dateLabel = day.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+		if (!day.evList) { this.dropIndicator.show(day.cell!, null, day.cell!, `Move to ${dateLabel}`); return; }
+		const hit = this.wrap.ownerDocument.elementFromPoint(point.x, point.y);
+		const list = hit?.closest<HTMLElement>('.bc-more-list') ?? day.evList;
+		const event = this.events.find(ev => ev.id === this.dragOrderId);
+		const rows = Array.from(list.querySelectorAll<HTMLElement>('.bc-chip')).filter(row =>
+			!this.grouped || this.events.find(ev => ev.id === row.dataset.eventId)?.groupKey === event?.groupKey);
+		const before = beforeAt(rows, point.y, this.dragOrderId!, 'eventId');
+		const remaining = rows.filter(row => row.dataset.eventId !== this.dragOrderId);
+		const lastVisible = remaining[remaining.length - 1];
+		const ordered = day.events.filter(ev => !this.grouped || ev.groupKey === event?.groupKey);
+		const lastIndex = ordered.findIndex(ev => ev.id === lastVisible?.dataset.eventId);
+		// Dropping below the final visible card stays ahead of cards hidden by "more".
+		this.dropBefore = before?.dataset.eventId
+			?? (lastIndex >= 0 ? ordered.slice(lastIndex + 1).find(ev => ev.id !== this.dragOrderId)?.id : null) ?? null;
+		this.dropIndicator.show(list, before, remaining[remaining.length - 1] ?? null, `${dateLabel} · ${before ? 'Before ' + before.querySelector('a')?.textContent : 'At end'}`);
+	}
 
-		const ids = day.events.map(e => e.id);
-		const fromIdx = ids.indexOf(dragId);
-		if (fromIdx === -1) return;
-
-		const chipsBefore = chips.slice(0, indicatorIdx).filter(c => c !== this.dropIndicator);
-		let toIdx = chipsBefore.length;
-		if (toIdx > fromIdx) toIdx--;
-		if (fromIdx === toIdx) return;
-
-		ids.splice(fromIdx, 1);
-		ids.splice(toIdx, 0, dragId);
-		this.plugin.settings.localOrder[day.dateKey] = ids;
+	private async commitCalendarDrop() {
+		const day = this.dropDay;
+		const id = this.dragOrderId;
+		if (!day || !id || !this.dragSourceDateKey) return;
+		const ev = this.events.find(event => event.id === id);
+		if (!ev) return;
+		const source = new Date(this.dragSourceDateKey + 'T00:00:00');
+		const delta = calendarDay(day.date) - calendarDay(source);
+		const previousDate = this.dragSourceDateKey;
+		const before = this.dropBefore;
+		const original = [...new Set([...(this.plugin.settings.localOrder[day.dateKey] ?? []), ...day.events.map(event => event.id)])];
+		const order = moveBefore(original, id, before);
+		if (!delta && original.join('\n') === order.join('\n')) return;
+		if (delta) {
+			await this.moveEvent(id, shiftDays(ev.start, delta));
+			if (this.mobileLayout) this.selectedDate = day.dateKey;
+		}
+		// Freeze rebuilds through date and rank writes; preserve hidden events via IDs.
+		this.plugin.settings.localOrder[day.dateKey] = order;
+		if (delta) this.plugin.settings.localOrder[previousDate] = (this.plugin.settings.localOrder[previousDate] ?? []).filter(value => value !== id);
 		await this.plugin.saveSettings();
-
-		// Write sortOrderProperty to frontmatter if configured
-		if (this.sortOrderProp && this.dateProp) {
-			for (let i = 0; i < ids.length; i++) {
-				const ev = this.events.find(e => e.id === ids[i]);
-				if (ev) {
-					try {
-						const sortPropId = `note.${this.sortOrderProp}` as BasesPropertyId;
-						await writeProp(this.app, ev.file, sortPropId, i * 10);
-					} catch (err) {
-						console.error('Failed to write sort order prop:', err);
-					}
-				}
+		if (this.sortOrderProp) {
+			for (let i = 0; i < order.length; i++) {
+				const event = this.events.find(value => value.id === order[i]);
+				if (event) await writeProp(this.app, event.file, `note.${this.sortOrderProp}`, i * 10);
 			}
 		}
+	}
 
-		this.placeEvents();
+	onunload() {
+		this.pointerDrag.destroy();
+		this.resizeObserver?.disconnect();
+		this.clearCalendarDrop();
+		this.closeMorePopover();
+		if (this.mouseUpHandler) this.wrap.ownerDocument.removeEventListener('mouseup', this.mouseUpHandler);
+		this.dropIndicator.destroy();
+		super.onunload();
 	}
 
 	private async moveEvent(id: string, newDate: Date) {
-		const ev = this.events.find(e => e.id === id);
-		if (!ev) return;
-		const ds = DK(newDate);
-		try {
-			if (this.dateProp) await writeProp(this.app, ev.file, this.dateProp, ds);
-			if (ev.end && this.endProp) {
-				const delta = newDate.getTime() - ev.start.getTime();
-				const newEnd = new Date(ev.end.getTime() + delta);
-				await writeProp(this.app, ev.file, this.endProp, DK(newEnd));
-				ev.end = newEnd;
-			}
-			ev.start = newDate;
-			ev.dateKey = ds;
-			this.placeEvents();
-			new Notice(`Moved "${ev.title}" to ${ds}`);
-		} catch (err) {
-			console.error(err);
-			new Notice('Failed to update date');
-		}
+		const ev = this.events.find(event => event.id === id);
+		if (!ev || !this.dateProp || parsePropertyId(this.dateProp).type !== 'note') return;
+		const delta = calendarDay(newDate) - calendarDay(ev.start);
+		const newEnd = ev.end ? shiftDays(ev.end, delta) : null;
+		const dateName = parsePropertyId(this.dateProp).name;
+		const endName = this.endProp && parsePropertyId(this.endProp).type === 'note' ? parsePropertyId(this.endProp).name : null;
+		await this.app.fileManager.processFrontMatter(ev.file, fm => {
+			fm[dateName] = DK(newDate);
+			if (newEnd && endName) fm[endName] = DK(newEnd);
+		});
+		ev.start = newDate; ev.dateKey = DK(newDate); ev.end = newEnd;
+		if (!this.dragging) this.placeEvents();
 	}
 
-	private createNote(startDate: Date, _endDate: Date | null) {
-		const folder = ((this.config.get('newNoteFolder') as string) ?? '').trim();
-		if (folder) {
-			// Instant create in the configured folder with the date prefilled.
-			const fm: Record<string, unknown> = {};
-			if (this.dateProp) fm[parsePropertyId(this.dateProp).name] = DK(startDate);
-			createNoteInFolder(this.app, folder, `Note ${DK(startDate)}`, fm)
-				.then(f => new Notice(`Created "${f.basename}"`))
-				.catch(err => { console.error(err); new Notice('Failed to create note'); });
-			return;
-		}
-		new QuickAddModal(this.app, this.plugin.settings, this.plugin, `Note ${DK(startDate)}`).open();
+	private createNote(startDate: Date, endDate: Date | null) {
+		const properties: Record<string, unknown> = {};
+		if (this.dateProp && parsePropertyId(this.dateProp).type === 'note') properties[parsePropertyId(this.dateProp).name] = DK(startDate);
+		if (endDate && this.endProp && parsePropertyId(this.endProp).type === 'note') properties[parsePropertyId(this.endProp).name] = DK(endDate);
+		return createViewNote(this, `Note ${DK(startDate)}`, properties);
 	}
 
 	private async loadData() {

@@ -1,12 +1,17 @@
+import { viewProperty } from './view-properties';
+import { PropertyFieldRenderer } from './property-field';
+import { createViewNote, groupDefaults } from './view-create';
+import { applyItemPadding } from './view-spacing';
+import { numericOrder } from './list-properties';
+import { colorCheckbox, propertyColor } from './task-appearance';
 import {
 	BasesView, TFile, QueryController, HoverParent, HoverPopover, Keymap,
 	BasesEntry, BasesPropertyId, parsePropertyId,
-	Value, BooleanValue, StringValue, NumberValue, DateValue, TagValue, NullValue, ListValue,
+	Value, BooleanValue, NullValue, ListValue,
 	Menu, Notice,
 } from 'obsidian';
-import Sortable from 'sortablejs';
+import { PointerDrag, DropIndicator, DragPoint, rememberScroll, dragGrip, beforeAt, moveBefore } from './drag';
 import { writeProp } from './frontmatter';
-import { createNoteInFolder } from './create-note';
 import { AUTO_PALETTE } from './util';
 import BaseViewsPlugin from './main';
 
@@ -33,12 +38,12 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 	private colorMap: Map<string, string> = new Map();
 	private autoColorMap: Map<string, string> = new Map();
 
-	// SortableJS drag-and-drop state
-	private sortables: Sortable[] = [];
-	// Per-instance group name so two open kanban panes can't cross-drag
-	private readonly cardGroup = 'bk-cards-' + Math.random().toString(36).slice(2);
+	private pointerDrag: PointerDrag;
 	private isDragging = false;
-	private pendingRefresh = false;
+	private dragCards: KanbanCard[] = [];
+	private dropContainer: HTMLElement | null = null;
+	private dropBefore: string | null = null;
+	private dropIndicator: DropIndicator;
 
 	// pending inline-add ghost card (survives re-renders)
 	private pendingGhost: { colKey: string; subgroupKey: string; text: string } | null = null;
@@ -46,29 +51,35 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 	constructor(ctrl: QueryController, parent: HTMLElement, private plugin: BaseViewsPlugin) {
 		super(ctrl);
 		this.wrap = parent.createDiv('bk-wrap');
+		this.dropIndicator = new DropIndicator(this.wrap);
+		this.pointerDrag = new PointerDrag(this.wrap, {
+			items: '.bk-card:not(.bk-ghost-card), .bk-col',
+			ignore: 'a:not(.bk-card-link), button, input, textarea, select, .bk-card-props',
+			onStart: (item, event) => {
+				if (item.classList.contains('bk-col') && (event.target as Element).closest('.bk-col-body')) return false;
+				this.isDragging = true;
+			},
+			onMove: (item, point) => this.updateKanbanDrop(item, point),
+			onDrop: async (item, point) => { this.updateKanbanDrop(item, point); await this.commitKanbanDrop(item); },
+			onEnd: () => { this.isDragging = false; this.clearKanbanDrop(); void this.onDataUpdated(); },
+			onError: error => { console.error(error); new Notice('Failed to save kanban move. The board has been refreshed.'); },
+		});
 	}
 
 	async onDataUpdated(): Promise<void> {
-		// Never rebuild the DOM mid-drag: Sortable is tracking live nodes.
-		if (this.isDragging) {
-			this.pendingRefresh = true;
-			return;
-		}
-		this.destroySortables();
+		if (this.isDragging) return;
+		applyItemPadding(this.wrap, this.config);
+		const restoreScroll = rememberScroll(this.wrap, ['.bk-board', '.bk-col-body']);
 		this.colorMap = this.parseColorMap();
+		this.dragCards = [];
 		this.wrap.empty();
 		this.buildBoard();
-	}
-
-	private destroySortables() {
-		for (const s of this.sortables) {
-			try { s.destroy(); } catch { /* node already detached */ }
-		}
-		this.sortables = [];
+		restoreScroll();
 	}
 
 	onunload() {
-		this.destroySortables();
+		this.pointerDrag.destroy(); this.clearKanbanDrop();
+		this.dropIndicator.destroy();
 		super.onunload();
 	}
 
@@ -187,7 +198,8 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 	}
 
 	private getSortOrderProp(): BasesPropertyId | null {
-		return this.config.getAsPropertyId('sortOrderProperty') ?? null;
+		const pid = viewProperty(this.config, 'sortOrderProperty');
+		return pid && parsePropertyId(pid).type === 'note' ? pid : null;
 	}
 
 	private sortCardsInColumn(cards: KanbanCard[], bucketKey: string): KanbanCard[] {
@@ -196,8 +208,8 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 			return [...cards].sort((a, b) => {
 				const av = a.entry.getValue(sortProp);
 				const bv = b.entry.getValue(sortProp);
-				const an = av && !(av instanceof NullValue) ? Number(av.toString()) : Infinity;
-				const bn = bv && !(bv instanceof NullValue) ? Number(bv.toString()) : Infinity;
+				const an = numericOrder(av?.toString());
+				const bn = numericOrder(bv?.toString());
 				return an - bn;
 			});
 		}
@@ -235,7 +247,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 	}
 
 	private cardTitle(entry: BasesEntry): string {
-		const titlePid = this.config.getAsPropertyId('cardTitleProperty');
+		const titlePid = viewProperty(this.config, 'cardTitleProperty');
 		if (titlePid) {
 			const v = entry.getValue(titlePid);
 			if (v && !(v instanceof NullValue)) return v.toString();
@@ -290,8 +302,8 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 			return;
 		}
 
-		const subgroupPid = this.config.getAsPropertyId('subgroupProperty') ?? null;
-		const donePid = this.config.getAsPropertyId('doneProperty') ?? null;
+		const subgroupPid = viewProperty(this.config, 'subgroupProperty') ?? null;
+		const donePid = viewProperty(this.config, 'doneProperty') ?? null;
 		const showEmpty = this.config.get('showEmptyColumns') !== false;
 		const colorMode = (this.config.get('columnColorMode') as string) || 'header';
 		const hiddenCols = new Set(this.getHiddenColumns());
@@ -327,7 +339,9 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 				const dv = entry.getValue(donePid);
 				if (dv instanceof BooleanValue) done = dv.isTruthy();
 			}
-			return { id: entry.file.path, title: this.cardTitle(entry), file: entry.file, entry, columnKey: colKey, subgroupKey: sgKey, done };
+			const card = { id: entry.file.path, title: this.cardTitle(entry), file: entry.file, entry, columnKey: colKey, subgroupKey: sgKey, done };
+			this.dragCards.push(card);
+			return card;
 		};
 
 		if (!subgroupPid) {
@@ -393,17 +407,6 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 	) {
 		const board = container.createDiv('bk-board');
 
-		// Column reordering (drag by header)
-		this.sortables.push(new Sortable(board, {
-			animation: 150,
-			draggable: '.bk-col',
-			handle: '.bk-col-hdr',
-			filter: '.bk-add, .bk-kebab',
-			preventOnFilter: false,
-			ghostClass: 'bk-col-ghost',
-			onStart: () => { this.isDragging = true; },
-			onEnd: (evt) => void this.handleColumnDrop(evt),
-		}));
 
 		const byCol = new Map<string, KanbanCard[]>();
 		for (const c of cards) {
@@ -456,6 +459,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 
 		// ── Header ──
 		const hdr = col.createDiv('bk-col-hdr');
+		dragGrip(hdr, `Drag column ${colKey} to reorder`);
 		if (color && (colorMode === 'header' || colorMode === 'both')) {
 			hdr.style.borderTop = `4px solid ${color}`;
 			hdr.style.background = `color-mix(in srgb, ${color} 30%, var(--background-secondary))`;
@@ -540,16 +544,8 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 		});
 
 		if (collapsed) {
-			// Collapsed: invisible body registered in the card group so cards can be dropped here
-			const body = col.createDiv('bk-col-body bk-col-body-collapsed');
-			this.sortables.push(new Sortable(body, {
-				group: this.cardGroup,
-				sort: false,
-				animation: 150,
-				draggable: '.bk-card',
-				onStart: () => { this.isDragging = true; },
-				onEnd: (evt) => void this.handleCardDrop(evt),
-			}));
+			// Keep a visible drop area even when cards are collapsed.
+			col.createDiv('bk-col-body bk-col-body-collapsed');
 		} else {
 			const body = col.createDiv('bk-col-body');
 			for (const card of cards) {
@@ -559,7 +555,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 			// Apply card border in 'both' mode
 			if (color && colorMode === 'both') {
 				for (const cardEl of Array.from(body.querySelectorAll('.bk-card')) as HTMLElement[]) {
-					cardEl.style.borderLeft = `3px solid ${color}`;
+					if (!cardEl.dataset.caCardColor) cardEl.style.borderLeft = `3px solid ${color}`;
 				}
 			}
 
@@ -568,26 +564,21 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 				this.showGhostCard(body, colKey, subgroupKey, this.pendingGhost.text);
 			}
 
-			// Card sorting & cross-column moves
-			this.sortables.push(new Sortable(body, {
-				group: this.cardGroup,
-				animation: 150,
-				draggable: '.bk-card:not(.bk-ghost-card)',
-				filter: 'input, .bk-toggle, .bk-check, .bk-prop-input',
-				preventOnFilter: false,
-				ghostClass: 'bk-card-ghost',
-				onStart: () => { this.isDragging = true; },
-				onEnd: (evt) => void this.handleCardDrop(evt),
-			}));
 		}
 	}
 
 	private renderCard(container: HTMLElement, card: KanbanCard, bucketKey: string, donePid: BasesPropertyId | null) {
 		const el = container.createDiv('bk-card' + (card.done ? ' bk-card-done' : ''));
 		el.dataset.cardId = card.id;
+		const cardColor = propertyColor(this.config, card.entry);
+		if (cardColor) {
+			el.dataset.caCardColor = cardColor;
+			el.style.borderLeft = `3px solid ${cardColor}`;
+			el.style.background = `color-mix(in srgb, ${cardColor} 12%, var(--background-primary))`;
+		}
 
 		// Cover image banner
-		const coverPid = this.config.getAsPropertyId('coverImageProperty');
+		const coverPid = viewProperty(this.config, 'coverImageProperty');
 		if (coverPid) {
 			let coverVal: Value | null = card.entry.getValue(coverPid);
 			if (coverVal instanceof ListValue) coverVal = coverVal.length() ? coverVal.get(0) : null;
@@ -603,22 +594,27 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 		}
 
 		const titleRow = el.createDiv('bk-card-title');
+		dragGrip(titleRow, `Drag ${card.title} to move or reorder`);
 
-		// Done checkbox
-		if (donePid) {
-			const cb = titleRow.createDiv('bk-check' + (card.done ? ' bk-check-on' : ''));
-			cb.addEventListener('click', async (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				const newVal = !card.done;
-				await writeProp(this.app, card.file, donePid, newVal);
-				card.done = newVal;
-				el.toggleClass('bk-card-done', newVal);
-				cb.toggleClass('bk-check-on', newVal);
-			});
+		// Completion controls share the same keyboard and save/error behavior.
+		if (donePid && parsePropertyId(donePid).type === 'note') {
+			const cb = titleRow.createEl('button', { cls: 'bk-check' + (card.done ? ' bk-check-on' : ''), attr: { type: 'button', role: 'checkbox', 'aria-checked': String(card.done), 'aria-label': `Mark ${card.title} ${card.done ? 'incomplete' : 'complete'}` } });
+			colorCheckbox(cb, this.config, card.entry);
+			cb.onclick = async event => {
+				event.preventDefault(); event.stopPropagation();
+				cb.disabled = true;
+				try {
+					const value = !card.done;
+					await writeProp(this.app, card.file, donePid!, value);
+					card.done = value; el.toggleClass('bk-card-done', value); cb.toggleClass('bk-check-on', value);
+					cb.setAttribute('aria-checked', String(value)); cb.setAttribute('aria-label', `Mark ${card.title} ${value ? 'incomplete' : 'complete'}`);
+				} catch (error) { console.error(error); new Notice('Failed to update completion'); }
+				finally { cb.disabled = false; }
+			};
 		}
 
 		const link = titleRow.createEl('a', { text: card.title, cls: 'bk-card-link internal-link', href: '#' });
+		link.draggable = false;
 		link.addEventListener('click', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
@@ -633,7 +629,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 		});
 
 		el.addEventListener('click', (e) => {
-			if ((e.target as HTMLElement).closest('.bk-card-link, .bk-check')) return;
+			if ((e.target as HTMLElement).closest('a, button, input, textarea, select, .bk-card-props, .bk-check')) return;
 			e.preventDefault();
 			e.stopPropagation();
 			const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
@@ -661,109 +657,26 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 		if (propOrder.length) {
 			const props = el.createDiv('bk-card-props');
 			for (const pid of propOrder) {
-				const { name } = parsePropertyId(pid);
-				if (name === 'name') continue;
+				const { type, name } = parsePropertyId(pid);
+				if (pid === 'file.name') continue;
 				if (donePid && pid === donePid) continue;
 				if (coverPid && pid === coverPid) continue;
 				const val = card.entry.getValue(pid);
-				if (!val || val instanceof NullValue) continue;
+				if ((!val || val instanceof NullValue) && type !== 'note') continue;
 				const row = props.createDiv('bk-prop-row');
 				row.createSpan({ cls: 'bk-prop-label', text: this.config.getDisplayName(pid) + ': ' });
-				this.renderPropVal(row, val, card, pid);
+				this.renderPropVal(row, val ?? new NullValue(), card, pid);
 			}
 		}
 
 	}
 
 	private renderPropVal(parent: HTMLElement, val: Value, card: KanbanCard, pid: BasesPropertyId) {
-		if (val instanceof BooleanValue) {
-			const checked = val.isTruthy();
-			const tog = parent.createEl('div', { cls: 'bk-toggle' + (checked ? ' bk-toggle-on' : '') });
-			tog.createEl('div', { cls: 'bk-toggle-knob' });
-			tog.addEventListener('click', async (e) => {
-				e.stopPropagation();
-				const newVal = !checked;
-				await writeProp(this.app, card.file, pid, newVal);
-				tog.toggleClass('bk-toggle-on', newVal);
-			});
-		} else if (val instanceof ListValue) {
-			const items: string[] = [];
-			for (let i = 0; i < val.length(); i++) {
-				const item = val.get(i);
-				if (item && !(item instanceof NullValue)) items.push(item.toString());
-			}
-			const row = parent.createDiv('bk-pill-row');
-			for (const item of items) {
-				row.createSpan({ cls: 'bk-pill' + (item.startsWith('#') ? ' bk-pill-tag' : ''), text: item });
-			}
-			row.addEventListener('click', (e) => {
-				e.stopPropagation();
-				this.editPropInline(parent, row, items.join(', '), 'text', async (newVal) => {
-					const list = newVal.split(',').map(s => s.trim()).filter(Boolean);
-					await writeProp(this.app, card.file, pid, list);
-				});
-			});
-		} else if (val instanceof TagValue) {
-			const span = parent.createSpan({ cls: 'bk-pill bk-pill-tag', text: val.toString() });
-			span.addEventListener('click', (e) => {
-				e.stopPropagation();
-				this.editPropInline(parent, span, val.toString(), 'text', async (newVal) => {
-					await writeProp(this.app, card.file, pid, newVal);
-				});
-			});
-		} else if (val instanceof StringValue || val instanceof NumberValue || val instanceof DateValue) {
-			const raw = val.toString();
-			const isDate = val instanceof DateValue;
-			const hasTime = isDate && raw.includes('T');
-			const span = parent.createSpan({ cls: 'bk-prop-val', text: raw });
-			span.addEventListener('click', (e) => {
-				e.stopPropagation();
-				this.editPropInline(
-					parent, span,
-					isDate ? raw.slice(0, hasTime ? 16 : 10) : raw,
-					isDate ? (hasTime ? 'datetime-local' : 'date') : 'text',
-					async (newVal) => { await writeProp(this.app, card.file, pid, newVal); },
-				);
-			});
-		} else {
-			parent.createSpan({ cls: 'bk-prop-val', text: val.toString() });
-		}
+		new PropertyFieldRenderer(this, 'bk').render(parent, val, card, pid);
 	}
 
-	/** Swap a display element for a temporary input; Enter/blur commits once, Escape cancels. */
-	private editPropInline(
-		parent: HTMLElement,
-		display: HTMLElement,
-		initial: string,
-		inputType: string,
-		onCommit: (value: string) => Promise<void>,
-	) {
-		const input = parent.createEl('input', { cls: 'bk-prop-input', type: inputType });
-		input.value = initial;
-		display.style.display = 'none';
-		input.focus();
-		if (inputType === 'text') input.select();
-		let settled = false;
-		const finish = () => {
-			input.remove();
-			display.style.display = '';
-		};
-		const commit = async () => {
-			if (settled) return;
-			settled = true;
-			await onCommit(input.value);
-			finish();
-		};
-		const cancel = () => {
-			if (settled) return;
-			settled = true;
-			finish();
-		};
-		input.addEventListener('blur', () => void commit());
-		input.addEventListener('keydown', (ke) => {
-			if (ke.key === 'Enter') { ke.preventDefault(); void commit(); }
-			if (ke.key === 'Escape') { ke.preventDefault(); cancel(); }
-		});
+	private renderPropertyText(parent: HTMLElement, raw: string, card: KanbanCard) {
+		new PropertyFieldRenderer(this, 'bk').renderText(parent, raw, card);
 	}
 
 	private showCardMenu(e: MouseEvent, card: KanbanCard) {
@@ -785,81 +698,78 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 		menu.showAtMouseEvent(e);
 	}
 
-	// ── DnD handlers (SortableJS) ───────────────────────────────────────────
+	// ── Drag persistence ────────────────────────────────────────────────────
+	private clearKanbanDrop() {
+		this.dropContainer?.classList.remove('ca-drop-target');
+		this.dropContainer = null; this.dropBefore = null; this.dropIndicator.hide();
+	}
 
-	private async handleCardDrop(evt: Sortable.SortableEvent) {
-		this.isDragging = false;
-		try {
-			const cardId = (evt.item as HTMLElement).dataset.cardId;
-			const fromColEl = evt.from.closest('.bk-col') as HTMLElement | null;
-			const toColEl = evt.to.closest('.bk-col') as HTMLElement | null;
-			if (!cardId || !fromColEl || !toColEl) return;
-
-			const fromColKey = fromColEl.dataset.colKey ?? '';
-			const fromSub = fromColEl.dataset.subgroupKey ?? '';
-			const toColKey = toColEl.dataset.colKey ?? '';
-			const toSub = toColEl.dataset.subgroupKey ?? '';
-			const fromBucket = `${fromSub}||${fromColKey}`;
-			const toBucket = `${toSub}||${toColKey}`;
-
-			const idsIn = (el: HTMLElement) =>
-				(Array.from(el.querySelectorAll(':scope > .bk-card:not(.bk-ghost-card)')) as HTMLElement[])
-					.map(c => c.dataset.cardId ?? '')
-					.filter(Boolean);
-
-			// Persist manual order BEFORE any frontmatter write triggers a Bases
-			// refresh, so the re-render agrees with the DOM Sortable produced.
-			const order = this.getManualCardOrder();
-			order[toBucket] = idsIn(evt.to);
-			if (fromBucket !== toBucket) order[fromBucket] = idsIn(evt.from);
-			const newOrderInTarget = order[toBucket];
-			await this.setManualCardOrder(order);
-
-			if (fromBucket !== toBucket) {
-				await this.moveCard(cardId, toColKey, toSub, fromSub);
-			}
-
-			const sortProp = this.getSortOrderProp();
-			if (sortProp) {
-				for (let i = 0; i < newOrderInTarget.length; i++) {
-					const file = this.app.vault.getFileByPath(newOrderInTarget[i]);
-					if (file) await writeProp(this.app, file, sortProp, i * 10);
-				}
-			}
-		} finally {
-			if (this.pendingRefresh) {
-				this.pendingRefresh = false;
-				await this.onDataUpdated();
-			}
+	private updateKanbanDrop(item: HTMLElement, point: DragPoint) {
+		this.clearKanbanDrop();
+		const hit = this.wrap.ownerDocument.elementFromPoint(point.x, point.y);
+		if (!hit || !this.wrap.contains(hit)) return;
+		const isColumn = item.classList.contains('bk-col');
+		if (isColumn) {
+			const board = hit.closest<HTMLElement>('.bk-board');
+			if (!board || board !== item.parentElement) return;
+			const cols = Array.from(board.querySelectorAll<HTMLElement>(':scope > .bk-col')).filter(col => col !== item);
+			const before = cols.find(col => point.x < col.getBoundingClientRect().left + col.getBoundingClientRect().width / 2) ?? null;
+			this.dropContainer = board; this.dropBefore = before?.dataset.colKey ?? null;
+			this.dropIndicator.show(board, before, cols[cols.length - 1] ?? null, before ? `Before ${before.dataset.colKey}` : 'Last column', true);
+		} else {
+			const col = hit.closest<HTMLElement>('.bk-col');
+			const body = col?.querySelector<HTMLElement>('.bk-col-body');
+			if (!body) return;
+			this.dropContainer = body;
+			body.classList.add('ca-drop-target');
+			const cards = Array.from(body.querySelectorAll<HTMLElement>(':scope > .bk-card:not(.bk-ghost-card)'));
+			const before = beforeAt(cards, point.y, item.dataset.cardId!, 'cardId');
+			this.dropBefore = before?.dataset.cardId ?? null;
+			const remaining = cards.filter(card => card !== item);
+			this.dropIndicator.show(body, before, remaining[remaining.length - 1] ?? null, `${col!.dataset.colKey} · ${before ? 'Before ' + before.querySelector('a')?.textContent : 'At end'}`);
 		}
 	}
 
-	private async handleColumnDrop(evt: Sortable.SortableEvent) {
-		this.isDragging = false;
-		try {
-			const item = evt.item as HTMLElement;
-			const key = item.dataset.colKey;
-			if (!key) return;
-
-			// Derive the new position from the dragged column's DOM neighbors and
-			// splice it into the saved order, preserving hidden columns' slots.
-			const domCols = Array.from(evt.to.querySelectorAll(':scope > .bk-col')) as HTMLElement[];
-			const idx = domCols.indexOf(item);
-			const prevKey = idx > 0 ? domCols[idx - 1].dataset.colKey : undefined;
-			const nextKey = idx < domCols.length - 1 ? domCols[idx + 1].dataset.colKey : undefined;
-
-			const order = this.getColumnOrder().filter(k => k !== key);
-			let insertAt = order.length;
-			if (prevKey !== undefined && order.indexOf(prevKey) !== -1) insertAt = order.indexOf(prevKey) + 1;
-			else if (nextKey !== undefined && order.indexOf(nextKey) !== -1) insertAt = order.indexOf(nextKey);
-			order.splice(insertAt, 0, key);
-			await this.setColumnOrder(order);
-		} finally {
-			if (this.pendingRefresh) {
-				this.pendingRefresh = false;
-				await this.onDataUpdated();
+	private async commitKanbanDrop(item: HTMLElement) {
+		const target = this.dropContainer;
+		if (!target) return;
+		if (item.classList.contains('bk-col')) {
+			const key = item.dataset.colKey!;
+			const order = this.getColumnOrder().filter(value => value !== key);
+			if (this.dropBefore) {
+				await this.setColumnOrder(moveBefore(order, key, this.dropBefore));
+			} else {
+				const visible = Array.from(target.querySelectorAll<HTMLElement>(':scope > .bk-col')).filter(col => col !== item);
+				const previous = visible[visible.length - 1]?.dataset.colKey;
+				const idx = previous ? order.indexOf(previous) + 1 : order.length;
+				order.splice(idx, 0, key); await this.setColumnOrder(order);
+			}
+			return;
+		}
+		const card = this.dragCards.find(value => value.id === item.dataset.cardId);
+		const col = target.closest<HTMLElement>('.bk-col');
+		if (!card || !col) return;
+		const column = col.dataset.colKey ?? NULL_KEY;
+		const subgroup = col.dataset.subgroupKey ?? '';
+		const sourceBucket = `${card.subgroupKey}||${card.columnKey}`;
+		const targetBucket = `${subgroup}||${column}`;
+		const ids = this.sortCardsInColumn(this.dragCards.filter(value => value.columnKey === column && value.subgroupKey === subgroup), targetBucket).map(value => value.id);
+		const order = moveBefore(ids, card.id, this.dropBefore);
+		if (sourceBucket === targetBucket && order.join('\n') === ids.join('\n')) return;
+		if (sourceBucket !== targetBucket) {
+			await this.moveCard(card.id, column, subgroup, card.subgroupKey);
+		}
+		const sortProp = this.getSortOrderProp();
+		if (sortProp) {
+			for (let i = 0; i < order.length; i++) {
+				const file = this.app.vault.getFileByPath(order[i]);
+				if (file) await writeProp(this.app, file, sortProp, i * 10);
 			}
 		}
+		const saved = this.getManualCardOrder();
+		saved[targetBucket] = order;
+		if (sourceBucket !== targetBucket) saved[sourceBucket] = this.sortCardsInColumn(this.dragCards.filter(value => value.columnKey === card.columnKey && value.subgroupKey === card.subgroupKey && value.id !== card.id), sourceBucket).map(value => value.id);
+		await this.setManualCardOrder(saved);
 	}
 
 	// ── inline card creation ────────────────────────────────────────────────
@@ -903,59 +813,22 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 	}
 
 	private async commitGhost(colKey: string, subgroupKey: string, title: string) {
-		const folder = ((this.config.get('newNoteFolder') as string) ?? '').trim();
-
-		const fm: Record<string, unknown> = {};
-		const groupByPid = this.getGroupByPropId();
-		if (groupByPid && colKey !== NULL_KEY) {
-			fm[parsePropertyId(groupByPid).name] = colKey;
-		} else if (!groupByPid) {
-			new Notice('No Group By set on this base — creating the note without a column value.');
-		}
-		const subgroupPid = this.config.getAsPropertyId('subgroupProperty');
-		if (subgroupPid && subgroupKey && subgroupKey !== NULL_KEY) {
-			fm[parsePropertyId(subgroupPid).name] = subgroupKey;
-		}
-		// Stub out the properties visible in this view so they show up in the new note
-		for (const pid of this.config.getOrder()) {
-			const { type, name } = parsePropertyId(pid);
-			if (type !== 'note') continue;
-			if (name === 'name' || name in fm) continue;
-			fm[name] = '';
-		}
-
-		try {
-			await createNoteInFolder(this.app, folder, title, fm);
-		} catch (err) {
-			console.error(err);
-			new Notice('Failed to create note. Check the console for details.');
-		}
+		const properties = groupDefaults(this, this.getGroupByPropId(), colKey);
+		const subgroupPid = viewProperty(this.config, 'subgroupProperty');
+		if (subgroupKey) Object.assign(properties, groupDefaults(this, subgroupPid, subgroupKey));
+		await createViewNote(this, title, properties);
 	}
 
-	private async moveCard(
-		cardId: string,
-		newColKey: string,
-		newSubgroupKey: string,
-		srcSubgroupKey: string,
-	) {
-		const groupByPid = this.getGroupByPropId();
-		if (!groupByPid) {
-			new Notice('Set a Group By on this base to enable drag-and-drop between columns.');
-			return;
-		}
+	private async moveCard(cardId: string, newColKey: string, newSubgroupKey: string, srcSubgroupKey: string) {
+		const group = this.getGroupByPropId();
+		if (!group || parsePropertyId(group).type !== 'note') throw new Error('Choose a note property for Group By to move between columns.');
+		const subgroup = viewProperty(this.config, 'subgroupProperty');
+		if (newSubgroupKey !== srcSubgroupKey && (!subgroup || parsePropertyId(subgroup).type !== 'note')) throw new Error('Choose a note property for subgroups to move between swimlanes.');
 		const file = this.app.vault.getFileByPath(cardId);
-		if (!file) return;
-		try {
-			await writeProp(this.app, file, groupByPid, newColKey === NULL_KEY ? '' : newColKey);
-			if (newSubgroupKey !== srcSubgroupKey) {
-				const subgroupPid = this.config.getAsPropertyId('subgroupProperty');
-				if (subgroupPid) {
-					await writeProp(this.app, file, subgroupPid, newSubgroupKey === NULL_KEY ? '' : newSubgroupKey);
-				}
-			}
-		} catch (err) {
-			console.error(err);
-			new Notice('Failed to update frontmatter');
-		}
+		if (!file) throw new Error('The note no longer exists.');
+		await this.app.fileManager.processFrontMatter(file, fm => {
+			fm[parsePropertyId(group).name] = newColKey === NULL_KEY ? null : newColKey;
+			if (newSubgroupKey !== srcSubgroupKey && subgroup) fm[parsePropertyId(subgroup).name] = newSubgroupKey === NULL_KEY ? null : newSubgroupKey;
+		});
 	}
 }
