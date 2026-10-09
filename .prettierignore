@@ -1,0 +1,6 @@
+node_modules/
+main.js
+main.js.map
+data.json
+package-lock.json
+sample_docs/

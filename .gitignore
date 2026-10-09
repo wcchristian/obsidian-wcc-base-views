@@ -1,0 +1,19 @@
+# Dependencies and generated release artifacts
+node_modules/
+main.js
+main.js.map
+*.tsbuildinfo
+coverage/
+
+# Vault-local state and development files
+data.json
+.hotreload
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
