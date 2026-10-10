@@ -20,7 +20,7 @@ export interface PropertyLinkPart {
 }
 
 /** Recognize property links without rendering arbitrary HTML. */
-export function propertyLinks(raw: string): PropertyLinkPart[] {
+export function propertyLinks(raw: string, shortInternal = false): PropertyLinkPart[] {
   const pattern =
     /\[\[([^\]\n]+)\]\]|\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)|(?:https?:\/\/|mailto:)[^\s<>[\]]+/gi;
   const parts: PropertyLinkPart[] = [];
@@ -30,7 +30,12 @@ export function propertyLinks(raw: string): PropertyLinkPart[] {
     if (start > offset) parts.push({ text: raw.slice(offset, start) });
     if (match[1]) {
       const [target, ...alias] = match[1].split('|');
-      parts.push({ text: alias.join('|') || target, target: target.trim(), internal: true });
+      const shortName = target.slice(target.lastIndexOf('/') + 1).replace(/\.md(?=#|$)/, '');
+      parts.push({
+        text: alias.join('|') || (shortInternal ? shortName : target),
+        target: target.trim(),
+        internal: true,
+      });
     } else if (match[3]) {
       parts.push({ text: match[2], target: match[3], internal: false });
     } else {

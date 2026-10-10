@@ -1,7 +1,7 @@
 {
   "id": "wcc-base-views",
   "name": "WCC Base Views",
-  "version": "0.1.0",
+  "version": "0.2",
   "minAppVersion": "1.10.2",
   "description": "Table, List, Kanban, Calendar, and Timeline views for Obsidian Bases.",
   "author": "Christian Andersen",

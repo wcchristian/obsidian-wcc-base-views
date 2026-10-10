@@ -1,8 +1,9 @@
+import { CardDetails } from '../../shared/card-details';
 import type { ListItem } from './model';
 import { createBackground } from '../../shared/background';
-import { viewProperty } from '../../shared/view-properties';
+import { propertyId, viewProperty } from '../../shared/view-properties';
 import { createViewNote, groupDefaults } from '../../shared/view-create';
-import { applyItemPadding } from '../../shared/view-spacing';
+import { applyViewDensity, hideProperty, isCompact } from '../../shared/view-density';
 import { colorCheckbox, propertyColor } from '../../shared/task-appearance';
 import type {
   QueryController,
@@ -41,6 +42,7 @@ export const VIEW_TYPE_BASE_LIST = 'wcc-list';
 const NULL_KEY = '(no value)';
 
 export class BaseListView extends BasesView implements HoverParent {
+  private cardDetails?: CardDetails;
   readonly type: string = VIEW_TYPE_BASE_LIST;
   hoverPopover: HoverPopover | null = null;
 
@@ -63,6 +65,7 @@ export class BaseListView extends BasesView implements HoverParent {
     this.dropIndicator = new DropIndicator(this.wrap);
     this.pointerDrag = new PointerDrag(this.wrap, {
       items: '.wcc-list-row',
+      wholeItem: '.wcc-list-row:not(.wcc-table-row)',
       ignore: 'a:not(.wcc-list-row-link), button, input, textarea, .wcc-list-row-props',
       onStart: (row) => {
         this.dragId = row.dataset.itemId!;
@@ -91,7 +94,7 @@ export class BaseListView extends BasesView implements HoverParent {
 
   async onDataUpdated(): Promise<void> {
     if (this.dragging) return;
-    applyItemPadding(this.wrap, this.config);
+    applyViewDensity(this.wrap, this.config);
     const restoreScroll = rememberScroll(this.wrap, []);
     const done = viewProperty(this.config, 'doneProperty');
     this.doneProp = done && parsePropertyId(done).type === 'note' ? done : null;
@@ -119,10 +122,10 @@ export class BaseListView extends BasesView implements HoverParent {
 
   protected getGroupByPropId(): BasesPropertyId | null {
     const extract = (v: unknown): BasesPropertyId | null => {
-      if (typeof v === 'string' && v) return v as BasesPropertyId;
+      if (typeof v === 'string' && v) return propertyId(v);
       if (v && typeof v === 'object') {
         const p = (v as Record<string, unknown>).property;
-        if (typeof p === 'string' && p) return p as BasesPropertyId;
+        if (typeof p === 'string' && p) return propertyId(p);
       }
       return null;
     };
@@ -217,9 +220,11 @@ export class BaseListView extends BasesView implements HoverParent {
     row.toggleClass('wcc-list-has-check', !!this.doneProp);
 
     const color = this.getItemColor(item);
+    const compact = isCompact(this.config);
+    const tint = compact ? 6 : 10;
     if (color) {
       row.style.borderLeft = `3px solid ${color}`;
-      row.style.background = `color-mix(in srgb, ${color} 12%, var(--background-primary))`;
+      row.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
     }
 
     const titleRow = row.createDiv('wcc-list-row-title');
@@ -255,10 +260,10 @@ export class BaseListView extends BasesView implements HoverParent {
 
     if (color) {
       row.addEventListener('mouseenter', () => {
-        row.style.background = `color-mix(in srgb, ${color} 22%, var(--background-primary))`;
+        row.style.background = `color-mix(in srgb, ${color} ${compact ? 10 : 16}%, var(--background-primary))`;
       });
       row.addEventListener('mouseleave', () => {
-        row.style.background = `color-mix(in srgb, ${color} 12%, var(--background-primary))`;
+        row.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
       });
     }
 
@@ -272,15 +277,27 @@ export class BaseListView extends BasesView implements HoverParent {
     this.config.getOrder().forEach((pid) => {
       if (pid === 'file.name') return;
       if (this.doneProp && pid === this.doneProp) return;
+      if (compact && pid === this.getGroupByPropId()) return;
       const val = item.entry.getValue(pid);
+      if (hideProperty(val, this.config)) return;
       if ((!val || val instanceof NullValue) && parsePropertyId(pid).type !== 'note') return;
       const propRow = props.createDiv('wcc-list-prop-row');
+      propRow.title = this.config.getDisplayName(pid);
       propRow.createSpan({
         cls: 'wcc-list-prop-label',
         text: this.config.getDisplayName(pid) + ': ',
       });
       this.renderPropVal(propRow, val ?? new NullValue(), item, pid);
     });
+    (this.cardDetails ??= new CardDetails()).render(
+      titleRow,
+      row,
+      props,
+      item.title,
+      item.id,
+      'wcc-list',
+      this.config,
+    );
   }
 
   protected renderTitle(titleRow: HTMLElement, item: ListItem, row: HTMLElement) {

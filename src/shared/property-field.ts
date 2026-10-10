@@ -14,6 +14,7 @@ import {
 import type { PropWriteValue } from './frontmatter';
 import { writeProp } from './frontmatter';
 import { parseListEdit, propertyLinks } from './list-properties';
+import { isCompact } from './view-density';
 
 interface PropertyHost extends HoverParent {
   app: App;
@@ -209,7 +210,9 @@ export class PropertyFieldRenderer {
   }
 
   renderText(parent: HTMLElement, raw: string, item: { file: TFile }) {
-    for (const part of propertyLinks(raw)) {
+    const shortLinks =
+      (this.prefix === 'wcc-list' || this.prefix === 'wcc-calendar') && isCompact(this.config);
+    for (const part of propertyLinks(raw, shortLinks)) {
       if (!part.target) {
         parent.createSpan({ text: part.text });
         continue;

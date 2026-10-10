@@ -32,6 +32,12 @@ assert.deepEqual(propertyLinks('https://example.com.'), [
   { text: 'https://example.com', target: 'https://example.com', internal: false },
   { text: '.' },
 ]);
+assert.deepEqual(propertyLinks('[[CA Notes 2/Projects/Datasite.md]]', true), [
+  { text: 'Datasite', target: 'CA Notes 2/Projects/Datasite.md', internal: true },
+]);
+assert.deepEqual(propertyLinks('[[Projects/A#Plan|Roadmap]]', true), [
+  { text: 'Roadmap', target: 'Projects/A#Plan', internal: true },
+]);
 assert.ok(propertyLinks('[bad](javascript:alert(1))').every((part) => !part.target));
 
 // Exercise the actual view editor against a small DOM/API harness, without a vault.
@@ -323,6 +329,73 @@ for (const [View, prefix] of [
     'native browser dragging is replaced by pointer dragging',
   );
   assert.ok(card.querySelector('.wcc-drag-grip'), 'each item has a touch drag grip');
+  // Compact cards omit blanks, retain falsy values, and keep calendar details accessible.
+  const values = {
+    'note.date': new DateValue('2026-10-09'),
+    'note.project': new StringValue('[[Project|Work]]'),
+    'note.description': new StringValue(''),
+    'note.parent': new NullValue(),
+    'note.recurring': new ListValue([]),
+    'note.zero': new NumberValue(0),
+    'note.flag': new BooleanValue(false),
+  };
+  const options = { density: 'compact' };
+  view.config.get = (key) => options[key];
+  view.config.getOrder = () => Object.keys(values);
+  view.propOrder = Object.keys(values);
+  view.dateProp = 'note.date';
+  view.viewMode = 'month';
+  const compactItem = { ...item, entry: { getValue: (pid) => values[pid] } };
+  const compactCards = new El();
+  if (prefix === 'wcc-calendar') view.makeChip(compactCards, compactItem);
+  else view.makeRow(compactCards, compactItem, '(no value)');
+  const compactCard = compactCards.children[0];
+  const compactProps = compactCard.querySelector(
+    prefix === 'wcc-calendar' ? '.wcc-calendar-chip-props' : '.wcc-list-row-props',
+  );
+  assert.equal(compactProps.children.length, prefix === 'wcc-calendar' ? 3 : 4);
+  assert.equal(compactProps.hidden, true);
+  const details = compactCard.querySelector(`.${prefix}-details`);
+  details.onclick(click);
+  assert.equal(compactProps.hidden, false);
+  assert.equal(details.attrs['aria-expanded'], 'true');
+  const refreshed = new El();
+  if (prefix === 'wcc-calendar') view.makeChip(refreshed, compactItem);
+  else view.makeRow(refreshed, compactItem, '(no value)');
+  assert.equal(refreshed.querySelector(`.${prefix}-details`).attrs['aria-expanded'], 'true');
+  details.onclick(click);
+  assert.equal(compactProps.hidden, true);
+  if (prefix === 'wcc-calendar') {
+    view.viewMode = 'agenda';
+    const agenda = new El();
+    view.makeChip(agenda, compactItem);
+    assert.equal(agenda.querySelector('.wcc-calendar-details').attrs['aria-expanded'], 'false');
+    assert.equal(agenda.querySelector('.wcc-calendar-chip-props').children.length, 3);
+  }
+  options.detailsExpanded = true;
+  options.density = 'comfortable';
+  options.hideEmptyProperties = false;
+  const fullCards = new El();
+  if (prefix === 'wcc-calendar') view.makeChip(fullCards, compactItem);
+  else view.makeRow(fullCards, compactItem, '(no value)');
+  assert.equal(
+    fullCards.querySelector(
+      prefix === 'wcc-calendar' ? '.wcc-calendar-chip-props' : '.wcc-list-row-props',
+    ).children.length,
+    7,
+  );
+  assert.equal(fullCards.querySelector(`.${prefix}-details`).attrs['aria-expanded'], 'true');
+  options.detailsExpanded = false;
+  const reset = new El();
+  if (prefix === 'wcc-calendar') view.makeChip(reset, compactItem);
+  else view.makeRow(reset, compactItem, '(no value)');
+  assert.equal(reset.querySelector(`.${prefix}-details`).attrs['aria-expanded'], 'false');
+  view.config.getOrder = () => [];
+  view.propOrder = [];
+  const noDetails = new El();
+  if (prefix === 'wcc-calendar') view.makeChip(noDetails, compactItem);
+  else view.makeRow(noDetails, compactItem, '(no value)');
+  assert.equal(noDetails.querySelector(`.${prefix}-details`), null);
   console.log(
     `${prefix}: links, typed edits, empty values, arrays, save/cancel, repeated toggles, and read-only properties passed.`,
   );

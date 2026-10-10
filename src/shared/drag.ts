@@ -13,6 +13,8 @@ interface DragOptions {
   owns?: (element: Element) => boolean;
   items: string;
   ignore?: string;
+  /** These items also accept drags from links, buttons, and displayed properties. */
+  wholeItem?: string;
   preview?: boolean;
   onStart(item: HTMLElement, event: PointerEvent): boolean | void;
   onMove(item: HTMLElement, point: DragPoint): void;
@@ -121,7 +123,7 @@ export class DropIndicator {
   }
 }
 
-/** Mouse/pen drag from card space; touch drag only from a grip so scrolling stays native. */
+/** Clicks stay native; movement drags cards. Touch card drags require a short hold. */
 export class PointerDrag {
   private state: {
     item: HTMLElement;
@@ -129,6 +131,7 @@ export class PointerDrag {
     point: DragPoint;
     started: boolean;
     down: PointerEvent;
+    armedAt: number;
   } | null = null;
   private ghost: HTMLElement | null = null;
   private frame = 0;
@@ -152,9 +155,23 @@ export class PointerDrag {
     this.listen(touch, 'change', updateHandles);
     this.listen(this.doc, 'pointerdown', this.down);
     this.listen(this.doc, 'pointermove', this.move, { passive: false });
+    this.listen(
+      this.doc,
+      'touchmove',
+      (event) => {
+        const state = this.state;
+        if (state?.point.pointerType === 'touch' && Date.now() >= state.armedAt) {
+          event.preventDefault();
+        }
+      },
+      { passive: false },
+    );
     this.listen(this.doc, 'pointerup', this.up);
     this.listen(this.doc, 'pointercancel', this.cancelPointer);
-    this.listen(root, 'lostpointercapture', this.cancelPointer);
+    this.listen(root, 'lostpointercapture', (event) => {
+      // Touch initially captures the pressed child. Its handoff to the root is expected.
+      if (event.target === root) this.cancelPointer(event);
+    });
     this.listen(this.win, 'blur', () => this.cancel());
     this.listen(this.doc, 'visibilitychange', () => {
       if (this.doc.hidden) this.cancel();
@@ -201,8 +218,11 @@ export class PointerDrag {
     const item = target.closest<HTMLElement>(this.options.items);
     if (!item || !this.owns(item)) return;
     const grip = target.closest('.wcc-drag-grip');
+    const anywhere = !!this.options.wholeItem && item.matches(this.options.wholeItem);
+    if (target.closest('input, textarea, select, [contenteditable="true"]')) return;
     if (
       !grip &&
+      !anywhere &&
       (event.pointerType !== 'mouse' ||
         target.closest(
           this.options.ignore ?? 'a, button, input, textarea, select, [contenteditable="true"]',
@@ -216,6 +236,7 @@ export class PointerDrag {
       pointerId: event.pointerId,
       started: false,
       down: event,
+      armedAt: anywhere && !grip && event.pointerType === 'touch' ? Date.now() + 250 : 0,
       point: {
         x: event.clientX,
         y: event.clientY,
@@ -242,8 +263,15 @@ export class PointerDrag {
     state.point.x = event.clientX;
     state.point.y = event.clientY;
     if (!state.started) {
-      if (Math.hypot(event.clientX - state.point.startX, event.clientY - state.point.startY) < 6)
+      const distance = Math.hypot(
+        event.clientX - state.point.startX,
+        event.clientY - state.point.startY,
+      );
+      if (Date.now() < state.armedAt) {
+        if (distance >= 6) this.cleanup(); // A quick swipe remains native scrolling.
         return;
+      }
+      if (distance < 6) return;
       if (!state.item.isConnected || this.options.onStart(state.item, state.down) === false) {
         this.cancel();
         return;
@@ -381,7 +409,11 @@ export class PointerDrag {
   };
   private context = (event: Event) => {
     if (!this.owns(event.target as Element)) return;
-    if (this.state?.started || (event.target as Element).closest('.wcc-drag-grip')) {
+    if (
+      this.state?.started ||
+      (this.state?.point.pointerType === 'touch' && Date.now() >= this.state.armedAt) ||
+      (event.target as Element).closest('.wcc-drag-grip')
+    ) {
       event.preventDefault();
       event.stopImmediatePropagation();
     }

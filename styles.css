@@ -2542,7 +2542,7 @@ textarea.wcc-list-prop-input {
   min-width: 0;
   white-space: normal;
 }
-.wcc-calendar-compact .wcc-calendar-chip-props {
+.wcc-calendar-wrap.wcc-calendar-compact .wcc-calendar-chip-props:not([hidden]):not(:empty) {
   display: flex;
   gap: 6px;
 }
@@ -3345,4 +3345,165 @@ textarea.wcc-table-prop-input {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   text-align: center;
+}
+
+/* Compact List and Calendar layouts retain wrapping titles and editable metadata. */
+.wcc-density-compact.wcc-list-wrap {
+  padding: 6px 8px 10px;
+}
+.wcc-density-compact .wcc-list-row {
+  gap: 2px;
+  border-radius: 4px;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  box-shadow: none;
+}
+.wcc-density-compact .wcc-list-items,
+.wcc-density-compact .wcc-list-ungrouped,
+.wcc-density-compact .wcc-calendar-evs,
+.wcc-density-compact .wcc-calendar-agenda-list {
+  gap: 2px;
+}
+.wcc-density-compact .wcc-list-group {
+  margin-bottom: 10px;
+}
+.wcc-density-compact .wcc-list-group-header {
+  margin-bottom: 3px;
+}
+.wcc-density-compact .wcc-list-row-title,
+.wcc-density-compact .wcc-calendar-chip-title {
+  gap: 6px;
+  align-items: flex-start;
+}
+.wcc-density-compact .wcc-list-row-link,
+.wcc-density-compact .wcc-calendar-chip-link {
+  line-height: 1.3;
+  font-weight: 500;
+}
+.wcc-density-compact .wcc-list-check,
+.wcc-density-compact .wcc-calendar-check {
+  margin-top: 2px;
+}
+.wcc-density-compact .wcc-list-check {
+  width: 14px;
+  height: 14px;
+}
+.wcc-density-compact .wcc-list-row-props,
+.wcc-density-compact .wcc-calendar-chip-props {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 1px 10px;
+  margin-top: 1px;
+  padding-left: 20px;
+}
+.wcc-density-compact .wcc-list-prop-row,
+.wcc-density-compact .wcc-calendar-prop-row {
+  min-height: 18px;
+  max-width: 100%;
+  gap: 3px;
+}
+.wcc-density-compact .wcc-list-prop-label,
+.wcc-density-compact .wcc-calendar-prop-label {
+  display: none;
+}
+.wcc-density-compact .wcc-list-prop-editable,
+.wcc-density-compact .wcc-calendar-prop-editable {
+  min-height: 18px;
+  padding: 0 2px;
+}
+.wcc-density-compact .wcc-calendar-chip {
+  border-radius: 4px;
+  box-shadow: none;
+}
+.wcc-density-compact.wcc-calendar-wrap {
+  container-type: inline-size;
+}
+.wcc-density-compact .wcc-calendar-agenda-list .wcc-calendar-chip {
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.wcc-density-compact .wcc-calendar-chip-props:not([hidden]) {
+  display: flex;
+}
+.wcc-density-compact .wcc-calendar-hdr {
+  padding: 6px 10px;
+}
+.wcc-density-compact .wcc-calendar-agenda-day {
+  padding: 4px 0;
+  gap: 8px;
+}
+.wcc-density-compact .wcc-calendar-agenda-date {
+  flex-direction: row;
+  min-width: 100px;
+  gap: 4px;
+  padding-top: 4px;
+}
+.wcc-density-compact .wcc-calendar-agenda-num {
+  font-size: var(--font-ui-smaller);
+}
+.wcc-density-compact .wcc-calendar-agenda-list {
+  min-width: 0;
+  padding: 0;
+}
+.wcc-density-compact .wcc-calendar-body-month-expand {
+  grid-auto-rows: minmax(56px, auto);
+}
+.wcc-density-compact .wcc-calendar-body-month-expand .wcc-calendar-cell {
+  min-height: 56px;
+}
+.wcc-calendar-chip.wcc-details-expanded > .wcc-calendar-chip-props:not([hidden]) {
+  display: flex;
+}
+.wcc-list-row-props[hidden],
+.wcc-calendar-chip-props[hidden] {
+  display: none;
+}
+.wcc-list-wrap button.wcc-card-details,
+.wcc-calendar-wrap button.wcc-card-details,
+.wcc-calendar-more-popover button.wcc-card-details {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.wcc-card-details:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+@media (max-width: 600px) {
+  .wcc-density-compact .wcc-calendar-agenda-day {
+    flex-wrap: wrap;
+  }
+  .wcc-density-compact .wcc-calendar-agenda-date {
+    width: 100%;
+  }
+}
+@container (max-width: 600px) {
+  .wcc-density-compact .wcc-calendar-agenda-day {
+    flex-wrap: wrap;
+  }
+  .wcc-density-compact .wcc-calendar-agenda-date {
+    width: 100%;
+  }
+}
+@media (pointer: coarse) {
+  .wcc-density-compact .wcc-list-check,
+  .wcc-density-compact .wcc-calendar-check,
+  .wcc-list-wrap button.wcc-card-details,
+  .wcc-calendar-wrap button.wcc-card-details {
+    min-width: 28px;
+    min-height: 28px;
+  }
+  .wcc-density-compact .wcc-list-prop-editable,
+  .wcc-density-compact .wcc-calendar-prop-editable {
+    min-height: 28px;
+    padding: 3px;
+  }
 }

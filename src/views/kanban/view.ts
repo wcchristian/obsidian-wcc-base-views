@@ -66,6 +66,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     this.dropIndicator = new DropIndicator(this.wrap);
     this.pointerDrag = new PointerDrag(this.wrap, {
       items: '.wcc-kanban-card:not(.wcc-kanban-ghost-card), .wcc-kanban-col',
+      wholeItem: '.wcc-kanban-card:not(.wcc-kanban-ghost-card)',
       ignore:
         'a:not(.wcc-kanban-card-link), button, input, textarea, select, .wcc-kanban-card-props',
       onStart: (item, event) => {

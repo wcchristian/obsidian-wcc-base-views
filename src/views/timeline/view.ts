@@ -24,7 +24,6 @@ import {
   NullValue,
   Menu,
   Notice,
-  Platform,
 } from 'obsidian';
 import type BaseViewsPlugin from '../../main';
 import { writeProp } from '../../shared/frontmatter';
@@ -115,6 +114,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     this.dropIndicator = new DropIndicator(this.wrap);
     this.pointerDrag = new PointerDrag(this.wrap, {
       items: '.wcc-timeline-bar, .wcc-timeline-row-label',
+      wholeItem: '.wcc-timeline-bar, .wcc-timeline-row-label',
       ignore:
         'a, button, input, textarea, .wcc-timeline-bar-check, .wcc-timeline-row-props, .wcc-timeline-row-subtitle',
       preview: false,
@@ -445,12 +445,8 @@ export class BaseTimelineView extends BasesView implements HoverParent {
   }
 
   private useCompactLayout(): boolean {
-    return (
-      this.config.get('mobileLayout') !== false &&
-      this.wrap.clientWidth <= 700 &&
-      (Platform.isMobile ||
-        !!this.wrap.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches)
-    );
+    const width = this.wrap.clientWidth;
+    return this.config.get('mobileLayout') !== false && width > 0 && width <= 700;
   }
 
   private getBarTop(rowY: number, height: number): number {

@@ -8,11 +8,16 @@ import type {
 } from 'obsidian';
 import { propertyOption } from '../shared/view-properties';
 import { itemPaddingOption } from '../shared/view-spacing';
+import { densityOptions } from '../shared/view-density';
 
 /** Fresh option objects keep view configuration independent. */
-function appearanceOptions(): BasesAllOptions[] {
+function appearanceOptions(density = false): BasesAllOptions[] {
   return [
-    { type: 'group', displayName: 'Spacing', items: [{ ...itemPaddingOption }] },
+    {
+      type: 'group',
+      displayName: 'Spacing',
+      items: [...(density ? densityOptions() : []), { ...itemPaddingOption }],
+    },
     {
       type: 'group',
       displayName: 'Color',
@@ -143,7 +148,7 @@ export function calendarOptions(): BasesAllOptions[] {
         } as BasesToggleOption,
       ],
     },
-    ...appearanceOptions(),
+    ...appearanceOptions(true),
   ];
 }
 
@@ -279,7 +284,7 @@ export function timelineOptions(): BasesAllOptions[] {
       items: [
         {
           type: 'toggle',
-          displayName: 'Stack details above timeline on small screens',
+          displayName: 'Stack details above timeline in narrow panes',
           key: 'mobileLayout',
           default: true,
         } as BasesToggleOption,
@@ -341,7 +346,7 @@ export function listOptions(): BasesAllOptions[] {
         propertyOption('Sort order property', 'sortOrderProperty'),
       ],
     },
-    ...appearanceOptions(),
+    ...appearanceOptions(true),
   ];
 }
 

@@ -1357,6 +1357,40 @@ try {
         );
       }
     }
+    // Drags can start on a checkbox, property link, or details arrow without its click.
+    for (const mode of ['list', 'calendar']) {
+      for (const surface of ['checkbox', 'property', 'details']) {
+        await page.evaluate((mode) => window.setupCardSurface(mode), mode);
+        const source =
+          mode === 'list'
+            ? `[data-item-id="A.md"] ${surface === 'checkbox' ? '.wcc-list-check' : surface === 'details' ? '.wcc-list-details' : '.wcc-list-prop-value a'}`
+            : `[data-event-id="A.md"] ${surface === 'checkbox' ? '.wcc-calendar-check' : surface === 'details' ? '.wcc-calendar-details' : '.wcc-calendar-prop-value a'}`;
+        const destination =
+          mode === 'list'
+            ? '.wcc-list-group:nth-child(2) .wcc-list-items'
+            : '.wcc-calendar-cell:nth-child(2) .wcc-calendar-evs';
+        await gesture(page, await point(page, source), await point(page, destination), touch, {
+          hold: touch,
+        });
+        const fm = await page.evaluate(() => window.dragState.frontmatter['A.md']);
+        assert.equal(
+          mode === 'list' ? fm.status : fm.start,
+          mode === 'list' ? 'Done' : '2026-03-09',
+        );
+        assert.equal(fm.done, false, 'dragging a checkbox must not toggle completion');
+        assert.equal(
+          await page.evaluate(() => window.dragState.links.length),
+          0,
+          'dragging a link must not open it',
+        );
+        assert.equal(await page.evaluate(() => window.dragState.opens.length), 0);
+        assert.equal(
+          await page.locator('input,textarea').count(),
+          0,
+          'dragging metadata must not start an editor',
+        );
+      }
+    }
     for (const mode of ['day', 'week', 'month']) {
       await page.evaluate((mode) => window.setupTimelineDefault(mode), mode);
       assert.equal(
@@ -1510,6 +1544,66 @@ try {
       'Month',
       'invalid default falls back to month',
     );
+    // Desktop mouse users get the same narrow-pane layouts, with live resize.
+    if (!touch) {
+      for (const mode of ['month', 'week']) {
+        await page.evaluate((mode) => window.setupCompactCalendar(mode), mode);
+        await page.evaluate(() => {
+          window.currentDragView.wrap.style.width = '600px';
+        });
+        await page.waitForFunction(() => !!document.querySelector('.wcc-calendar-compact'));
+        assert.equal(await page.locator('.wcc-calendar-mobile').count(), 1);
+        assert.equal(await page.locator('.wcc-touch-drag').count(), 0);
+        await page.evaluate(() => {
+          window.currentDragView.wrap.style.width = '900px';
+        });
+        await page.waitForFunction(() => !document.querySelector('.wcc-calendar-compact'));
+        assert.equal(await page.locator('.wcc-calendar-mobile').count(), 0);
+      }
+      await page.evaluate(() => window.setupMobileTimeline());
+      await page.evaluate(() => {
+        window.currentDragView.wrap.style.width = '600px';
+      });
+      await page.waitForFunction(() => !!document.querySelector('.wcc-timeline-mobile'));
+      assert.equal(await page.getByRole('separator', { name: 'Resize title column' }).count(), 0);
+      await page.evaluate(() => {
+        window.currentDragView.wrap.style.width = '900px';
+      });
+      await page.waitForFunction(() => !document.querySelector('.wcc-timeline-mobile'));
+      assert.equal(await page.getByRole('separator', { name: 'Resize title column' }).count(), 1);
+    }
+    // Density affects actual rendered height; metadata and details remain usable.
+    const heights = {};
+    for (const density of ['comfortable', 'compact']) {
+      await page.evaluate((value) => window.setupDensity(value), density);
+      const listDetails = page.locator('.wcc-list-details').first();
+      assert.equal(await listDetails.getAttribute('aria-expanded'), 'false');
+      assert.equal(await page.locator('.wcc-list-row-props').first().isVisible(), false);
+      await listDetails.click();
+      assert.equal(await page.locator('.wcc-list-row-props').first().isVisible(), true);
+      heights[density] = await page
+        .locator('.wcc-list-row')
+        .first()
+        .evaluate((el) => el.getBoundingClientRect().height);
+      assert.equal(await page.locator('.wcc-list-prop-empty, .wcc-calendar-prop-empty').count(), 0);
+      if (density === 'compact') {
+        const details = page.locator('.wcc-calendar-details').first();
+        assert.equal(await details.getAttribute('aria-expanded'), 'false');
+        await details.click();
+        assert.equal(await details.getAttribute('aria-expanded'), 'true');
+        assert.ok(await page.locator('.wcc-details-expanded .wcc-calendar-chip-props').isVisible());
+        await details.press('Enter');
+        assert.equal(await details.getAttribute('aria-expanded'), 'false');
+        await page.screenshot({
+          path: touch ? '/tmp/wcc-density-mobile.png' : '/tmp/wcc-density-desktop.png',
+        });
+      }
+    }
+    assert.ok(heights.compact < heights.comfortable, 'compact rows must use less vertical height');
+    await page.evaluate(() => {
+      const fixture = document.getElementById('fixture');
+      fixture.removeAttribute('style');
+    });
     // Failed persistence always clears the gesture state.
     await page.evaluate(() => {
       window.setupDrag('list');

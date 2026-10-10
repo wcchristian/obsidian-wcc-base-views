@@ -6,8 +6,96 @@ import { BaseTimelineView } from '../../src/views/timeline/view';
 import { TFile, StringValue, NumberValue, BooleanValue, ListValue, NullValue } from 'obsidian';
 import { PointerDrag, dragGrip, rememberScroll } from '../../src/shared/drag';
 import { applyItemPadding } from '../../src/shared/view-spacing';
+import { applyViewDensity } from '../../src/shared/view-density';
 import { viewProperty } from '../../src/shared/view-properties';
 window.rememberDragScroll = rememberScroll;
+
+// Real renderers with populated and blank fields for density and visual checks.
+window.setupDensity = (density) => {
+  window.setupDrag('list');
+  const app = view.app;
+  const fixture = document.getElementById('fixture');
+  fixture.empty();
+  fixture.style.height = 'auto';
+  fixture.style.display = 'grid';
+  fixture.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))';
+  fixture.style.gap = '16px';
+  fixture.style.setProperty('--color-orange', '#e2a45f');
+  const values = {
+    density,
+    colorProperty: 'project',
+    colorValues: ['Datasite:orange'],
+    checkboxColorProperty: 'priority',
+    checkboxColorValues: ['high:#e85d5d'],
+  };
+  const order = [
+    'note.date',
+    'note.priority',
+    'note.project',
+    'note.section',
+    'note.parent',
+    'note.recurring',
+  ];
+  const config = {
+    get: (key) => values[key],
+    getOrder: () => ['file.name', ...order],
+    getDisplayName: (pid) => pid.replace('note.', ''),
+  };
+  const items = [
+    'Review the weekly project plan',
+    'A longer task title that wraps naturally instead of reserving a large empty card for every task',
+    'Send release notes',
+  ].map((title, i) => {
+    const fields = {
+      'note.date': new StringValue('2026-10-09'),
+      'note.priority': new StringValue(i === 1 ? '' : 'high'),
+      'note.project': new StringValue('[[Projects/Datasite]]'),
+      'note.section': new StringValue(''),
+      'note.parent': new NullValue(),
+      'note.recurring': new StringValue(i === 0 ? 'every friday' : ''),
+    };
+    return {
+      id: `${i}.md`,
+      title,
+      done: false,
+      file: new TFile(`${i}.md`),
+      entry: { getValue: (pid) => fields[pid] },
+      start: new Date(2026, 9, 9),
+      end: null,
+    };
+  });
+  for (const mode of ['List', 'Agenda', 'Calendar']) {
+    const panel = fixture.createDiv();
+    panel.createEl('h3', { text: `${mode} · ${density}` });
+    const list = mode === 'List';
+    const instance = Object.create((list ? BaseListView : BaseCalendarView).prototype);
+    Object.assign(instance, {
+      app,
+      config,
+      doneProp: 'note.done',
+      dateProp: 'note.date',
+      propOrder: order,
+      mobileLayout: false,
+      viewMode: mode === 'Agenda' ? 'agenda' : 'month',
+    });
+    instance.wrap = panel.createDiv(list ? 'wcc-list-wrap' : 'wcc-calendar-wrap');
+    applyViewDensity(instance.wrap, config);
+    let container;
+    if (mode === 'Agenda') {
+      instance.titleEl = instance.wrap.createDiv();
+      instance.bodyEl = instance.wrap.createDiv('wcc-calendar-body-agenda');
+      instance.curDate = new Date(2026, 9, 9);
+      instance.agendaDays = 1;
+      instance.days = [];
+      instance.renderAgenda();
+      container = instance.days[0].evList;
+    } else container = instance.wrap.createDiv(list ? 'wcc-list-items' : 'wcc-calendar-evs');
+    for (const item of items) {
+      if (list) instance.makeRow(container, item, '(no value)');
+      else instance.makeChip(container, item);
+    }
+  }
+};
 
 let view;
 window.refreshTable = () => BaseTableView.prototype.onDataUpdated.call(view);
@@ -225,6 +313,7 @@ window.setupCompactCalendar = (mode = 'month', rolling = false) => {
   view.viewMode = mode;
   view.weekRolling = rolling;
   view.mobileLayout = view.useCompactLayout();
+  window.dragState.config.detailsExpanded = true;
   view.propOrder = ['note.project', 'note.order'];
   window.dragState.frontmatter['A.md'].project = '[[Project|Work]]';
   view.events[0].title = 'Prepare project release notes';
@@ -328,6 +417,10 @@ window.setupCrowdedCalendar = (expand = false) => {
 window.setupViewFields = (mode) => {
   window.setupDrag(mode);
   const state = window.dragState;
+  // This scenario explicitly exercises editing blanks in the expanded layout.
+  state.config.density = 'comfortable';
+  state.config.detailsExpanded = true;
+  state.config.hideEmptyProperties = false;
   Object.assign(state.frontmatter['A.md'], {
     project: '[[Project|Work]]',
     flag: false,
@@ -383,6 +476,37 @@ window.setupViewFields = (mode) => {
     view.subtitleProp = 'note.empty';
     view.items.push(state.makeItem('B'));
     view.buildContent(view.wrap.createDiv('wcc-timeline-scroll'));
+  }
+};
+
+window.setupCardSurface = (mode) => {
+  window.setupDrag(mode);
+  const state = window.dragState;
+  for (const name of ['A.md', 'B.md', 'C.md']) {
+    Object.assign(state.frontmatter[name], { project: '[[Project|Work]]', done: false });
+  }
+  state.config.detailsExpanded = true;
+  state.config.colorProperty = 'project';
+  state.config.colorValues = ['Project:#e2a45f'];
+  view.doneProp = 'note.done';
+  view.config.getOrder = () => ['note.project'];
+  view.propOrder = ['note.project'];
+  view.viewMode = 'agenda'; // Show metadata while exercising calendar-card drag targets.
+  if (mode === 'list') {
+    view.wrap.empty();
+    for (const group of ['Todo', 'Done']) {
+      const section = view.wrap.createDiv('wcc-list-group');
+      const list = section.createDiv('wcc-list-items');
+      list.dataset.listGroup = group;
+      for (const id of group === 'Todo' ? ['A', 'B'] : ['C']) {
+        view.makeRow(list, state.makeItem(id, group), group);
+      }
+    }
+  } else {
+    for (const day of view.days) {
+      day.evList.empty();
+      for (const event of day.events) view.makeChip(day.evList, event);
+    }
   }
 };
 

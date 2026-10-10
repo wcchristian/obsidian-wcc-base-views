@@ -1,3 +1,4 @@
+import { CardDetails } from '../../shared/card-details';
 import { distributeEvents, sortSegments, assignLanes } from './layout';
 import type { EventSegment } from './layout';
 import type { ViewMode, CalEvent, DayInfo, WeekInfo } from './model';
@@ -5,7 +6,7 @@ import { createBackground } from '../../shared/background';
 import { DatePromptModal } from '../../shared/date-prompt';
 import { viewProperty } from '../../shared/view-properties';
 import { createViewNote } from '../../shared/view-create';
-import { applyItemPadding } from '../../shared/view-spacing';
+import { applyViewDensity, hideProperty, isCompact } from '../../shared/view-density';
 import { numericOrder } from '../../shared/list-properties';
 import { colorCheckbox, propertyColor } from '../../shared/task-appearance';
 import type { QueryController, HoverParent, HoverPopover, BasesPropertyId, Value } from 'obsidian';
@@ -40,6 +41,7 @@ const LANE_HEIGHT = 16;
 const LANE_GAP = 2;
 
 export class BaseCalendarView extends BasesView implements HoverParent {
+  private cardDetails?: CardDetails;
   readonly type = VIEW_TYPE_BASE_CALENDAR;
   hoverPopover: HoverPopover | null = null;
 
@@ -95,6 +97,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.pointerDrag = new PointerDrag(this.wrap, {
       owns: (element) => !!this.morePopover?.contains(element),
       items: '.wcc-calendar-chip, .wcc-calendar-md-bar, .wcc-calendar-md-inline',
+      wholeItem: '.wcc-calendar-chip, .wcc-calendar-md-bar, .wcc-calendar-md-inline',
       ignore: 'a:not(.wcc-calendar-chip-link), button, input, textarea, .wcc-calendar-chip-props',
       onStart: (item, event) => {
         if (!this.dateProp || parsePropertyId(this.dateProp).type !== 'note') {
@@ -142,7 +145,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
   async onDataUpdated(): Promise<void> {
     if (this.dragging) return;
-    applyItemPadding(this.wrap, this.config);
+    applyViewDensity(this.wrap, this.config);
     const restoreScroll = rememberScroll(this.wrap, [
       '.wcc-calendar-body',
       '.wcc-calendar-compact-week-strip',
@@ -184,7 +187,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
   private buildUI(container: HTMLElement) {
     container.addClass('wcc-calendar-wrap');
-    if (Platform.isMobile) container.addClass('wcc-calendar-mobile');
+    container.toggleClass('wcc-calendar-mobile', this.mobileLayout);
 
     const hdr = container.createDiv('wcc-calendar-hdr');
     const nav = hdr.createDiv('wcc-calendar-nav');
@@ -315,6 +318,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.days = [];
     this.weeks = [];
     this.mobilePanel = null;
+    this.wrap.toggleClass('wcc-calendar-mobile', this.mobileLayout);
     this.wrap.toggleClass('wcc-calendar-compact', this.mobileLayout && this.viewMode !== 'agenda');
 
     if (this.modeButtons) {
@@ -351,10 +355,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
   private useCompactLayout(): boolean {
     const width = this.wrap.getBoundingClientRect().width;
-    const touch =
-      Platform.isMobile ||
-      this.wrap.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches;
-    return !!touch && width > 0 && width <= 700;
+    return width > 0 && width <= 700;
   }
 
   private compactDay(parent: HTMLElement, date: Date, currentMonth = true): DayInfo {
@@ -1052,10 +1053,12 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       'wcc-calendar-chip' + (ev.done ? ' wcc-calendar-chip-done' : ''),
     );
     chip.dataset.eventId = ev.id;
+    const compact = isCompact(this.config);
+    const tint = compact ? 6 : 10;
     const color = this.getEventColor(ev);
     if (color) {
       chip.style.borderLeft = `2px solid ${color}`;
-      chip.style.background = `color-mix(in srgb, ${color} 12%, var(--background-primary))`;
+      chip.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
     }
 
     const titleRow = chip.createDiv('wcc-calendar-chip-title');
@@ -1152,10 +1155,10 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
     if (color) {
       chip.addEventListener('mouseenter', () => {
-        chip.style.background = `color-mix(in srgb, ${color} 22%, var(--background-primary))`;
+        chip.style.background = `color-mix(in srgb, ${color} ${compact ? 10 : 16}%, var(--background-primary))`;
       });
       chip.addEventListener('mouseleave', () => {
-        chip.style.background = `color-mix(in srgb, ${color} 12%, var(--background-primary))`;
+        chip.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
       });
     }
 
@@ -1180,15 +1183,27 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.propOrder.forEach((pid) => {
       if (pid === 'file.name') return;
       if (this.doneProp && pid === this.doneProp) return;
+      if (compact && (pid === this.dateProp || pid === this.endProp)) return;
       const val = ev.entry.getValue(pid);
+      if (hideProperty(val, this.config)) return;
       if ((!val || val instanceof NullValue) && parsePropertyId(pid).type !== 'note') return;
       const row = props.createDiv('wcc-calendar-prop-row');
+      row.title = this.config.getDisplayName(pid);
       row.createSpan({
         cls: 'wcc-calendar-prop-label',
         text: this.config.getDisplayName(pid) + ': ',
       });
       this.renderPropVal(row, val ?? new NullValue(), ev, pid);
     });
+    (this.cardDetails ??= new CardDetails()).render(
+      titleRow,
+      chip,
+      props,
+      ev.title,
+      ev.id,
+      'wcc-calendar',
+      this.config,
+    );
   }
 
   private showContextMenu(e: MouseEvent, ev: CalEvent) {
@@ -1268,7 +1283,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.closeMorePopover();
     const pop = document.body.createDiv('wcc-calendar-more-popover');
     pop.classList.toggle('wcc-touch-drag', this.wrap.classList.contains('wcc-touch-drag'));
-    applyItemPadding(pop, this.config);
+    applyViewDensity(pop, this.config);
     this.morePopover = pop;
 
     const title = pop.createDiv('wcc-calendar-more-title');
