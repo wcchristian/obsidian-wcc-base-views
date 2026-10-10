@@ -20,6 +20,6 @@ export function applyItemPadding(
     typeof value === 'number' && Number.isFinite(value)
       ? Math.max(0, Math.min(20, value))
       : fallback;
-  root.style.setProperty('--wcc-item-padding', `${padding}px`);
+  root.setCssProps({ ['--wcc-item-padding']: `${padding}px` });
   return padding;
 }

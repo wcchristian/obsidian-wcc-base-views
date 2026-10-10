@@ -60,7 +60,7 @@ export function beforeAt(
 export class DropIndicator {
   private line: HTMLElement;
   constructor(private root: HTMLElement) {
-    this.line = root.ownerDocument.createElement('div');
+    this.line = root.ownerDocument.body.createDiv();
     this.line.className = 'wcc-drop-feedback';
     this.line.hidden = true;
     this.line.setAttribute('role', 'img');
@@ -107,10 +107,14 @@ export class DropIndicator {
         ? anchor!.top
         : (anchor?.bottom ?? top + 8);
     this.line.classList.toggle('wcc-drop-feedback-vertical', vertical);
-    this.line.style.left = `${vertical ? Math.max(left + 3, Math.min(right - 3, position)) : left + 3}px`;
-    this.line.style.top = `${vertical ? top + 3 : Math.max(top + 3, Math.min(bottom - 3, position))}px`;
-    this.line.style.width = vertical ? '4px' : `${Math.max(4, right - left - 6)}px`;
-    this.line.style.height = vertical ? `${Math.max(4, bottom - top - 6)}px` : '4px';
+    this.line.setCssStyles({
+      left: `${vertical ? Math.max(left + 3, Math.min(right - 3, position)) : left + 3}px`,
+    });
+    this.line.setCssStyles({
+      top: `${vertical ? top + 3 : Math.max(top + 3, Math.min(bottom - 3, position))}px`,
+    });
+    this.line.setCssStyles({ width: vertical ? '4px' : `${Math.max(4, right - left - 6)}px` });
+    this.line.setCssStyles({ height: vertical ? `${Math.max(4, bottom - top - 6)}px` : '4px' });
     this.line.setAttribute('aria-label', text);
     if (!this.line.isConnected) this.root.ownerDocument.body.appendChild(this.line);
     this.line.hidden = false;
@@ -293,12 +297,13 @@ export class PointerDrag {
         this.ghost.setAttribute('aria-hidden', 'true');
         this.ghost.removeAttribute('id');
         this.ghost.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
-        this.ghost.style.width = `${Math.min(rect.width, 360)}px`;
-        this.ghost.style.maxHeight = '180px';
-        this.ghost.style.setProperty(
-          '--wcc-item-padding',
-          this.win.getComputedStyle(state.item).getPropertyValue('--wcc-item-padding'),
-        );
+        this.ghost.setCssStyles({ width: `${Math.min(rect.width, 360)}px` });
+        this.ghost.setCssStyles({ maxHeight: '180px' });
+        this.ghost.setCssProps({
+          ['--wcc-item-padding']: this.win
+            .getComputedStyle(state.item)
+            .getPropertyValue('--wcc-item-padding'),
+        });
         if (state.point.pointerType !== 'mouse') {
           // A compact preview of this card only; property lists can resemble extra cards.
           this.ghost
@@ -306,8 +311,10 @@ export class PointerDrag {
               '.wcc-calendar-chip-props, .wcc-list-row-props, .wcc-kanban-card-props, .wcc-kanban-card-cover, .wcc-calendar-compact-event-range',
             )
             .forEach((el) => el.remove());
-          this.ghost.style.width = `${Math.min(rect.width, 240, this.win.innerWidth - 24)}px`;
-          this.ghost.style.maxHeight = '96px';
+          this.ghost.setCssStyles({
+            width: `${Math.min(rect.width, 240, this.win.innerWidth - 24)}px`,
+          });
+          this.ghost.setCssStyles({ maxHeight: '96px' });
         }
         this.doc.body.appendChild(this.ghost);
       }
@@ -323,8 +330,12 @@ export class PointerDrag {
     if (this.ghost) {
       const touch = state.point.pointerType !== 'mouse';
       const rect = this.ghost.getBoundingClientRect();
-      this.ghost.style.left = `${touch ? Math.max(8, Math.min(this.win.innerWidth - rect.width - 8, state.point.x - rect.width / 2)) : state.point.x + 12}px`;
-      this.ghost.style.top = `${touch ? Math.max(8, state.point.y - rect.height - 60) : state.point.y + 12}px`;
+      this.ghost.setCssStyles({
+        left: `${touch ? Math.max(8, Math.min(this.win.innerWidth - rect.width - 8, state.point.x - rect.width / 2)) : state.point.x + 12}px`,
+      });
+      this.ghost.setCssStyles({
+        top: `${touch ? Math.max(8, state.point.y - rect.height - 60) : state.point.y + 12}px`,
+      });
     }
     this.options.onMove(state.item, state.point);
   }

@@ -55,6 +55,12 @@ class El {
     this.style = {};
     this.dataset = {};
   }
+  setCssStyles(styles) {
+    Object.assign(this.style, styles);
+  }
+  setCssProps(props) {
+    Object.assign(this.style, props);
+  }
   createEl(tag, opts = {}) {
     const el = tag === 'input' ? new Input(tag, opts, this) : new El(tag, opts, this);
     this.children.push(el);

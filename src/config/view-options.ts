@@ -1,11 +1,4 @@
-import type {
-  BasesAllOptions,
-  BasesDropdownOption,
-  BasesSliderOption,
-  BasesTextOption,
-  BasesMultitextOption,
-  BasesToggleOption,
-} from 'obsidian';
+import type { BasesAllOptions } from 'obsidian';
 import { propertyOption } from '../shared/view-properties';
 import { itemPaddingOption } from '../shared/view-spacing';
 import { densityOptions } from '../shared/view-density';
@@ -28,7 +21,7 @@ function appearanceOptions(density = false): BasesAllOptions[] {
           displayName: 'Value colors (value:color)',
           key: 'colorValues',
           default: [],
-        } as BasesMultitextOption,
+        },
       ],
     },
     {
@@ -41,7 +34,7 @@ function appearanceOptions(density = false): BasesAllOptions[] {
           displayName: 'Checkbox value colors (value:color)',
           key: 'checkboxColorValues',
           default: [],
-        } as BasesMultitextOption,
+        },
       ],
     },
     {
@@ -53,14 +46,14 @@ function appearanceOptions(density = false): BasesAllOptions[] {
           displayName: 'Image URL or vault path',
           key: 'bgImage',
           placeholder: 'https://... or path/to/image.png',
-        } as BasesTextOption,
+        },
         {
           type: 'dropdown',
           displayName: 'Fit',
           key: 'bgFit',
           default: 'cover',
           options: { cover: 'Cover', contain: 'Contain', stretch: 'Stretch' },
-        } as BasesDropdownOption,
+        },
         {
           type: 'slider',
           displayName: 'Blur',
@@ -69,7 +62,7 @@ function appearanceOptions(density = false): BasesAllOptions[] {
           min: 0,
           max: 20,
           step: 1,
-        } as BasesSliderOption,
+        },
         {
           type: 'slider',
           displayName: 'Opacity',
@@ -78,7 +71,7 @@ function appearanceOptions(density = false): BasesAllOptions[] {
           min: 0,
           max: 1,
           step: 0.05,
-        } as BasesSliderOption,
+        },
       ],
     },
   ];
@@ -106,7 +99,7 @@ export function calendarOptions(): BasesAllOptions[] {
           key: 'viewMode',
           default: 'month',
           options: { month: 'Month', week: 'Week', agenda: 'Agenda' },
-        } as BasesDropdownOption,
+        },
         {
           type: 'slider',
           displayName: 'Max events per day (month view)',
@@ -115,13 +108,13 @@ export function calendarOptions(): BasesAllOptions[] {
           min: 1,
           max: 10,
           step: 1,
-        } as BasesSliderOption,
+        },
         {
           type: 'toggle',
           displayName: 'Expand month rows (month view)',
           key: 'monthExpand',
           default: false,
-        } as BasesToggleOption,
+        },
         {
           type: 'slider',
           displayName: 'Agenda day count (agenda view)',
@@ -130,7 +123,7 @@ export function calendarOptions(): BasesAllOptions[] {
           min: 1,
           max: 30,
           step: 1,
-        } as BasesSliderOption,
+        },
         {
           type: 'slider',
           displayName: 'Days per week (week view)',
@@ -139,13 +132,13 @@ export function calendarOptions(): BasesAllOptions[] {
           min: 1,
           max: 10,
           step: 1,
-        } as BasesSliderOption,
+        },
         {
           type: 'toggle',
           displayName: 'Rolling week (week view)',
           key: 'weekRolling',
           default: false,
-        } as BasesToggleOption,
+        },
       ],
     },
     ...appearanceOptions(true),
@@ -174,7 +167,7 @@ export function kanbanOptions(): BasesAllOptions[] {
           displayName: 'Show empty columns',
           key: 'showEmptyColumns',
           default: true,
-        } as BasesToggleOption,
+        },
       ],
     },
     {
@@ -186,19 +179,19 @@ export function kanbanOptions(): BasesAllOptions[] {
           displayName: 'Column order',
           key: 'columnOrder',
           default: [],
-        } as BasesMultitextOption,
+        },
         {
           type: 'multitext',
           displayName: 'Hidden columns',
           key: 'hiddenColumns',
           default: [],
-        } as BasesMultitextOption,
+        },
         {
           type: 'multitext',
           displayName: 'Collapsed columns',
           key: 'collapsedColumns',
           default: [],
-        } as BasesMultitextOption,
+        },
       ],
     },
     {
@@ -210,7 +203,7 @@ export function kanbanOptions(): BasesAllOptions[] {
           displayName: 'Hidden sub-groups',
           key: 'hiddenSubgroups',
           default: [],
-        } as BasesMultitextOption,
+        },
       ],
     },
     {
@@ -223,13 +216,13 @@ export function kanbanOptions(): BasesAllOptions[] {
           displayName: 'Card value colors (value:color)',
           key: 'colorValues',
           default: [],
-        } as BasesMultitextOption,
+        },
         {
           type: 'multitext',
           displayName: 'Column colors (value:color)',
           key: 'columnColors',
           default: [],
-        } as BasesMultitextOption,
+        },
         {
           type: 'dropdown',
           displayName: 'Apply color to',
@@ -240,7 +233,7 @@ export function kanbanOptions(): BasesAllOptions[] {
             column: 'Whole column',
             both: 'Header + card border',
           },
-        } as BasesDropdownOption,
+        },
       ],
     },
     ...appearanceOptions().filter(
@@ -275,7 +268,7 @@ export function timelineOptions(): BasesAllOptions[] {
           min: 120,
           max: 600,
           step: 10,
-        } as BasesSliderOption,
+        },
       ],
     },
     {
@@ -287,7 +280,7 @@ export function timelineOptions(): BasesAllOptions[] {
           displayName: 'Stack details above timeline in narrow panes',
           key: 'mobileLayout',
           default: true,
-        } as BasesToggleOption,
+        },
       ],
     },
     {
@@ -300,7 +293,7 @@ export function timelineOptions(): BasesAllOptions[] {
           key: 'zoomLevel',
           default: 'week',
           options: { day: 'Day', week: 'Week', month: 'Month' },
-        } as BasesDropdownOption,
+        },
         {
           type: 'slider',
           displayName: 'Days visible (day zoom)',
@@ -309,7 +302,7 @@ export function timelineOptions(): BasesAllOptions[] {
           min: 7,
           max: 120,
           step: 1,
-        } as BasesSliderOption,
+        },
         {
           type: 'slider',
           displayName: 'Weeks visible (week zoom)',
@@ -318,7 +311,7 @@ export function timelineOptions(): BasesAllOptions[] {
           min: 4,
           max: 52,
           step: 1,
-        } as BasesSliderOption,
+        },
         {
           type: 'slider',
           displayName: 'Months visible (month zoom)',
@@ -327,7 +320,7 @@ export function timelineOptions(): BasesAllOptions[] {
           min: 3,
           max: 24,
           step: 1,
-        } as BasesSliderOption,
+        },
       ],
     },
     ...appearanceOptions().filter(

@@ -8,7 +8,7 @@ const mock = `
 export class TFile { constructor(path){this.path=path;this.basename=path.replace('.md','');} }
 export class TFolder {}
 export class BasesView { constructor(ctrl){this.app=ctrl.app;} onunload(){} }
-export class Modal {} export class AbstractInputSuggest {}
+export class Modal {} export class AbstractInputSuggest {} export class Setting {setName(){return this;}setHeading(){return this;}}
 export class Notice { constructor(message){window.dragState?.notices.push(message);} }
 export class Menu { showAtMouseEvent(){} }
 export const Platform={isMobile:false};
@@ -42,6 +42,8 @@ const bundled = await build({
 const polyfill = `
 HTMLElement.prototype.createEl=function(tag,opts={}){const el=document.createElement(tag);if(opts.cls)el.className=opts.cls;if(opts.text)el.textContent=opts.text;for(const key of ['type','href','title'])if(opts[key])el[key]=opts[key];for(const [key,val]of Object.entries(opts.attr??{}))el.setAttribute(key,val);this.append(el);return el;};
 HTMLElement.prototype.createDiv=function(opts={}){return this.createEl('div',typeof opts==='string'?{cls:opts}:opts);};
+HTMLElement.prototype.setCssStyles=function(styles){Object.assign(this.style,styles);};
+HTMLElement.prototype.setCssProps=function(props){for(const [key,value]of Object.entries(props))this.style.setProperty(key,value);};
 HTMLElement.prototype.createSpan=function(opts={}){return this.createEl('span',opts);};
 HTMLElement.prototype.empty=function(){this.replaceChildren();};
 HTMLElement.prototype.addClass=function(cls){this.classList.add(cls);};

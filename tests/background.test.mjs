@@ -27,7 +27,13 @@ test('background rendering uses shared defaults and skips empty images', () => {
   const children = [];
   const parent = {
     createDiv(cls) {
-      const element = { cls, style: {} };
+      const element = {
+        cls,
+        style: {},
+        setCssStyles(styles) {
+          Object.assign(this.style, styles);
+        },
+      };
       children.push(element);
       return element;
     },

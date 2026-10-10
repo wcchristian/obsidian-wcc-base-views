@@ -206,14 +206,14 @@
 
 /* ── Month expand-to-fit ─────────────────────────────── */
 .wcc-calendar-body-month-expand {
-  display: grid;
-  grid-template-columns: repeat(var(--wcc-calendar-cols, 7), 1fr);
-  grid-auto-rows: minmax(80px, auto);
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
 }
 
 .wcc-calendar-body-month-expand .wcc-calendar-week {
-  display: contents;
+  flex: 0 0 auto;
+  grid-auto-rows: minmax(80px, auto);
 }
 
 .wcc-calendar-body-month-expand .wcc-calendar-cell {
@@ -324,7 +324,7 @@
   margin-right: 0;
 }
 .wcc-calendar-md-bar.wcc-calendar-md-done .wcc-calendar-md-label {
-  text-decoration: line-through;
+  text-decoration-line: line-through;
   opacity: 0.65;
 }
 .wcc-calendar-md-bar.wcc-calendar-dragging {
@@ -390,7 +390,7 @@
 }
 
 .wcc-calendar-chip.wcc-calendar-chip-done .wcc-calendar-chip-link {
-  text-decoration: line-through;
+  text-decoration-line: line-through;
   opacity: 0.65;
 }
 
@@ -405,7 +405,7 @@
 
 .wcc-calendar-chip-link {
   color: var(--text-normal);
-  text-decoration: none;
+  text-decoration-line: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -413,7 +413,7 @@
 }
 
 .wcc-calendar-chip-link:hover {
-  text-decoration: underline;
+  text-decoration-line: underline;
 }
 
 .wcc-calendar-check {
@@ -527,7 +527,7 @@
 }
 .wcc-calendar-prop-value a {
   color: var(--link-color);
-  text-decoration: underline;
+  text-decoration-line: underline;
   cursor: pointer;
 }
 .wcc-calendar-chip .wcc-calendar-prop-input {
@@ -639,8 +639,8 @@ button.wcc-calendar-md-check {
   color: var(--text-error);
 }
 
-.wcc-calendar-selecting {
-  background: color-mix(in srgb, var(--interactive-accent) 25%, transparent) !important;
+.wcc-calendar-wrap .wcc-calendar-cell.wcc-calendar-selecting {
+  background: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
   box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
 
@@ -1127,7 +1127,7 @@ button.wcc-calendar-md-check {
 
 /* SortableJS: the element following the cursor */
 .wcc-kanban-card.sortable-drag {
-  opacity: 1 !important;
+  opacity: 1;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
   cursor: grabbing;
 }
@@ -1141,7 +1141,7 @@ button.wcc-calendar-md-check {
 }
 
 .wcc-kanban-card-done .wcc-kanban-card-link {
-  text-decoration: line-through;
+  text-decoration-line: line-through;
   color: var(--text-muted);
 }
 
@@ -1191,7 +1191,7 @@ button.wcc-calendar-md-check {
 .wcc-kanban-card-link {
   font-size: var(--font-ui-medium);
   color: var(--text-normal);
-  text-decoration: none;
+  text-decoration-line: none;
   font-weight: 600;
   line-height: 1.3;
   flex: 1;
@@ -1202,7 +1202,7 @@ button.wcc-calendar-md-check {
 
 .wcc-kanban-card-link:hover {
   color: var(--interactive-accent);
-  text-decoration: underline;
+  text-decoration-line: underline;
 }
 
 /* ── Card properties ─────────────────────────────────────────── */
@@ -1236,7 +1236,7 @@ button.wcc-calendar-md-check {
 }
 
 .wcc-kanban-prop-val:hover {
-  text-decoration: underline;
+  text-decoration-line: underline;
   text-decoration-style: dotted;
 }
 
@@ -1677,7 +1677,7 @@ button.wcc-calendar-md-check {
 }
 .wcc-timeline-row-title:hover {
   color: var(--interactive-accent);
-  text-decoration: underline;
+  text-decoration-line: underline;
 }
 
 .wcc-timeline-row-subtitle {
@@ -1772,7 +1772,7 @@ button.wcc-calendar-md-check {
   z-index: 20;
 }
 .wcc-timeline-bar.wcc-timeline-bar-done .wcc-timeline-bar-label {
-  text-decoration: line-through;
+  text-decoration-line: line-through;
   opacity: 0.6;
 }
 
@@ -1989,7 +1989,7 @@ button.wcc-calendar-md-check {
 }
 
 .wcc-list-row-done .wcc-list-row-link {
-  text-decoration: line-through;
+  text-decoration-line: line-through;
   opacity: 0.65;
 }
 
@@ -2026,7 +2026,7 @@ button.wcc-calendar-md-check {
 .wcc-list-row-link {
   flex: 1;
   color: var(--text-normal);
-  text-decoration: none;
+  text-decoration-line: none;
   font-weight: 600;
   line-height: 1.5;
   overflow: hidden;
@@ -2035,7 +2035,7 @@ button.wcc-calendar-md-check {
 }
 
 .wcc-list-row-link:hover {
-  text-decoration: underline;
+  text-decoration-line: underline;
 }
 
 /* ── Property rows ──────────────────────────────────────────── */
@@ -2093,7 +2093,7 @@ button.wcc-calendar-md-check {
 }
 .wcc-list-prop-value a {
   color: var(--link-color);
-  text-decoration: underline;
+  text-decoration-line: underline;
   cursor: pointer;
 }
 .wcc-list-prop-input {
@@ -2244,14 +2244,22 @@ textarea.wcc-list-prop-input {
 .wcc-drag-source {
   opacity: 0.4;
 }
-.wcc-drag-active,
-.wcc-drag-active * {
-  cursor: grabbing !important;
+.wcc-list-wrap.wcc-drag-active,
+.wcc-calendar-wrap.wcc-drag-active,
+.wcc-kanban-wrap.wcc-drag-active,
+.wcc-timeline-wrap.wcc-drag-active,
+.wcc-drag-active.wcc-touch-drag,
+.wcc-drag-active.wcc-touch-drag *,
+.wcc-drag-active.wcc-list-wrap *,
+.wcc-drag-active.wcc-calendar-wrap *,
+.wcc-drag-active.wcc-kanban-wrap *,
+.wcc-drag-active.wcc-timeline-wrap * {
+  cursor: grabbing;
 }
-.wcc-drag-preview {
-  position: fixed !important;
-  z-index: 99999 !important;
-  pointer-events: none !important;
+body > .wcc-drag-preview {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: none;
   opacity: 0.85;
   overflow: hidden;
   box-sizing: border-box;
@@ -2445,7 +2453,7 @@ textarea.wcc-list-prop-input {
 }
 .wcc-calendar-compact-today .wcc-calendar-compact-number {
   color: var(--interactive-accent);
-  text-decoration: underline;
+  text-decoration-line: underline;
   text-underline-offset: 3px;
 }
 .wcc-calendar-compact-date.wcc-calendar-compact-selected {
@@ -2733,7 +2741,7 @@ button.wcc-drag-grip {
 .wcc-kanban-prop-value a,
 .wcc-timeline-prop-value a {
   color: var(--link-color);
-  text-decoration: underline;
+  text-decoration-line: underline;
   cursor: pointer;
 }
 .wcc-kanban-prop-input,
@@ -3023,7 +3031,7 @@ button.wcc-timeline-bar-check:focus-visible {
 }
 .wcc-table-table .wcc-list-row-link {
   color: var(--link-color, var(--interactive-accent));
-  text-decoration: underline;
+  text-decoration-line: underline;
   font-weight: 400;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -3080,7 +3088,7 @@ button.wcc-timeline-bar-check:focus-visible {
 }
 .wcc-table-prop-value a {
   color: var(--link-color);
-  text-decoration: underline;
+  text-decoration-line: underline;
 }
 .wcc-table-prop-input {
   box-sizing: border-box;
@@ -3115,7 +3123,7 @@ textarea.wcc-table-prop-input {
   background: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
   outline: none;
 }
-.wcc-table-row.wcc-drag-preview {
+.wcc-table-rowbody > .wcc-drag-preview {
   display: block;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
@@ -3506,4 +3514,22 @@ textarea.wcc-table-prop-input {
     min-height: 28px;
     padding: 3px;
   }
+}
+
+.wcc-color-picker {
+  position: fixed;
+  left: -200px;
+  top: -200px;
+  opacity: 0;
+  pointer-events: none;
+}
+.wcc-density-compact .wcc-calendar-body-month-expand .wcc-calendar-week {
+  grid-auto-rows: minmax(56px, auto);
+}
+
+.wcc-date-prompt-input {
+  width: 100%;
+}
+.wcc-date-prompt-buttons {
+  margin-top: 12px;
 }

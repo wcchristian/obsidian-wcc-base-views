@@ -35,4 +35,4 @@ Use sample notes in a disposable vault. For a rendering or interaction change, c
 
 ## Repository hygiene
 
-Keep the lockfile, source, tests, samples, and documentation tracked. Do not commit dependencies, generated builds, local settings, credentials, or test artifacts. CI runs the same `npm run check` command used locally. This repository does not automate publishing.
+Keep the lockfile, source, tests, samples, and documentation tracked. Do not commit dependencies, generated builds, local settings, credentials, or test artifacts. CI runs the same `npm run check` command used locally. Pushing a semantic version tag matching the manifest runs the checked release workflow and publishes the three installable assets.

@@ -43,6 +43,9 @@ export const VIEW_TYPE_BASE_KANBAN = 'wcc-kanban';
 const NULL_KEY = '(no value)';
 
 export class BaseKanbanView extends BasesView implements HoverParent {
+  private get win(): Window {
+    return this.wrap.ownerDocument.defaultView!;
+  }
   readonly type = VIEW_TYPE_BASE_KANBAN;
   hoverPopover: HoverPopover | null = null;
 
@@ -94,7 +97,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     });
   }
 
-  async onDataUpdated(): Promise<void> {
+  onDataUpdated(): void {
     if (this.isDragging) return;
     applyItemPadding(this.wrap, this.config);
     const restoreScroll = rememberScroll(this.wrap, ['.wcc-kanban-board', '.wcc-kanban-col-body']);
@@ -150,7 +153,14 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     const v = this.config.get('manualCardOrder');
     if (typeof v === 'string') {
       try {
-        return JSON.parse(v);
+        const parsed: unknown = JSON.parse(v);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        return Object.fromEntries(
+          Object.entries(parsed).filter(
+            (entry): entry is [string, string[]] =>
+              Array.isArray(entry[1]) && entry[1].every((id: unknown) => typeof id === 'string'),
+          ),
+        );
       } catch {
         return {};
       }
@@ -542,17 +552,23 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 
     // Whole-column tint
     if (color && colorMode === 'column') {
-      col.style.background = `color-mix(in srgb, ${color} 20%, var(--background-secondary))`;
+      col.setCssStyles({
+        background: `color-mix(in srgb, ${color} 20%, var(--background-secondary))`,
+      });
     }
 
     // ── Header ──
     const hdr = col.createDiv('wcc-kanban-col-hdr');
     dragGrip(hdr, `Drag column ${colKey} to reorder`);
     if (color && (colorMode === 'header' || colorMode === 'both')) {
-      hdr.style.borderTop = `4px solid ${color}`;
-      hdr.style.background = `color-mix(in srgb, ${color} 30%, var(--background-secondary))`;
+      hdr.setCssStyles({ borderTop: `4px solid ${color}` });
+      hdr.setCssStyles({
+        background: `color-mix(in srgb, ${color} 30%, var(--background-secondary))`,
+      });
     } else if (color && colorMode === 'column') {
-      hdr.style.background = `color-mix(in srgb, ${color} 22%, var(--background-secondary))`;
+      hdr.setCssStyles({
+        background: `color-mix(in srgb, ${color} 22%, var(--background-secondary))`,
+      });
     }
 
     if (collapsed) {
@@ -571,7 +587,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
       });
       addBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const body = col.querySelector('.wcc-kanban-col-body') as HTMLElement | null;
+        const body = col.querySelector<HTMLElement>('.wcc-kanban-col-body');
         if (body) this.showGhostCard(body, colKey, subgroupKey);
       });
     }
@@ -626,15 +642,14 @@ export class BaseKanbanView extends BasesView implements HoverParent {
           .setTitle('Set color…')
           .setIcon('palette')
           .onClick(() => {
-            const picker = document.createElement('input');
+            const picker = this.wrap.ownerDocument.body.createEl('input');
             picker.type = 'color';
             picker.value = color ?? '#3b82f6';
-            picker.style.cssText =
-              'position:fixed;left:-200px;top:-200px;opacity:0;pointer-events:none;';
-            document.body.appendChild(picker);
-            const t = setTimeout(() => picker.remove(), 60000);
+            picker.addClass('wcc-color-picker');
+            this.wrap.ownerDocument.body.appendChild(picker);
+            const t = this.win.setTimeout(() => picker.remove(), 60000);
             picker.addEventListener('change', () => {
-              clearTimeout(t);
+              this.win.clearTimeout(t);
               this.setColumnColor(colKey, picker.value);
               picker.remove();
             });
@@ -675,10 +690,9 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 
       // Apply card border in 'both' mode
       if (color && colorMode === 'both') {
-        for (const cardEl of Array.from(
-          body.querySelectorAll('.wcc-kanban-card'),
-        ) as HTMLElement[]) {
-          if (!cardEl.dataset.caCardColor) cardEl.style.borderLeft = `3px solid ${color}`;
+        for (const cardEl of Array.from(body.querySelectorAll<HTMLElement>('.wcc-kanban-card'))) {
+          if (!cardEl.dataset.caCardColor)
+            cardEl.setCssStyles({ borderLeft: `3px solid ${color}` });
         }
       }
 
@@ -704,8 +718,10 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     const cardColor = propertyColor(this.config, card.entry);
     if (cardColor) {
       el.dataset.caCardColor = cardColor;
-      el.style.borderLeft = `3px solid ${cardColor}`;
-      el.style.background = `color-mix(in srgb, ${cardColor} 12%, var(--background-primary))`;
+      el.setCssStyles({ borderLeft: `3px solid ${cardColor}` });
+      el.setCssStyles({
+        background: `color-mix(in srgb, ${cardColor} 12%, var(--background-primary))`,
+      });
     }
 
     // Cover image banner
@@ -745,7 +761,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         cb.disabled = true;
         try {
           const value = !card.done;
-          await writeProp(this.app, card.file, donePid!, value);
+          await writeProp(this.app, card.file, donePid, value);
           card.done = value;
           el.toggleClass('wcc-kanban-card-done', value);
           cb.toggleClass('wcc-kanban-check-on', value);
@@ -769,8 +785,8 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     link.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-      leaf?.openFile(card.file);
+      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+      void leaf?.openFile(card.file);
     });
     link.addEventListener('mouseover', (e) => {
       this.app.workspace.trigger('hover-link', {
@@ -791,8 +807,8 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         return;
       e.preventDefault();
       e.stopPropagation();
-      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-      leaf?.openFile(card.file);
+      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+      void leaf?.openFile(card.file);
     });
 
     // Middle-click opens in a new tab, like a normal Obsidian link
@@ -803,7 +819,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
       if (e.button !== 1) return;
       e.preventDefault();
       e.stopPropagation();
-      this.app.workspace.getLeaf('tab').openFile(card.file);
+      void this.app.workspace.getLeaf('tab').openFile(card.file);
     });
 
     el.addEventListener('contextmenu', (e) => {
@@ -843,7 +859,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         .setTitle('Open in new tab')
         .setIcon('file-plus')
         .onClick(() => {
-          this.app.workspace.getLeaf('tab').openFile(card.file);
+          void this.app.workspace.getLeaf('tab').openFile(card.file);
         }),
     );
     menu.addItem((i) =>
@@ -851,7 +867,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         .setTitle('Open to the right')
         .setIcon('separator-vertical')
         .onClick(() => {
-          this.app.workspace.getLeaf('split').openFile(card.file);
+          void this.app.workspace.getLeaf('split').openFile(card.file);
         }),
     );
     menu.addItem((i) =>
@@ -1068,7 +1084,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
       throw new Error('Choose a note property for subgroups to move between swimlanes.');
     const file = this.app.vault.getFileByPath(cardId);
     if (!file) throw new Error('The note no longer exists.');
-    await this.app.fileManager.processFrontMatter(file, (fm) => {
+    await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
       fm[parsePropertyId(group).name] = newColKey === NULL_KEY ? null : newColKey;
       if (newSubgroupKey !== srcSubgroupKey && subgroup)
         fm[parsePropertyId(subgroup).name] = newSubgroupKey === NULL_KEY ? null : newSubgroupKey;

@@ -22,6 +22,6 @@ export function colorCheckbox(el: HTMLElement, config: BasesViewConfig, entry: B
   const color = propertyColor(config, entry, true);
   if (color) {
     el.addClass('wcc-colored-check');
-    el.style.setProperty('--wcc-check-color', color);
+    el.setCssProps({ ['--wcc-check-color']: color });
   }
 }

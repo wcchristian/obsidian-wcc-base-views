@@ -1,0 +1,27 @@
+name: Release
+on:
+  push:
+    tags:
+      - '*'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Verify tag matches manifest
+        run: node scripts/validate-release.mjs --tag="$RELEASE_TAG"
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - name: Publish installable release assets
+        run: gh release create "$RELEASE_TAG" main.js manifest.json styles.css --verify-tag --title "$RELEASE_TAG" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}

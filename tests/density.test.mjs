@@ -29,7 +29,9 @@ test('compact density changes layout and default padding; explicit padding survi
   const styles = new Map();
   const root = {
     toggleClass: (key, value) => classes.set(key, value),
-    style: { setProperty: (key, value) => styles.set(key, value) },
+    setCssProps: (props) => {
+      for (const [key, value] of Object.entries(props)) styles.set(key, value);
+    },
   };
   applyViewDensity(root, config());
   assert.equal(classes.get('wcc-density-compact'), true);

@@ -1,3 +1,4 @@
+import { setIcon } from 'obsidian';
 import type { ZoomLevel, TimelineItem } from './model';
 import { createBackground } from '../../shared/background';
 import { DatePromptModal } from '../../shared/date-prompt';
@@ -102,7 +103,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     this.paneObserver = new ResizeObserver(() => {
       if (!this.config || this.dragging || !this.barsLayerEl?.isConnected || !this.scrollEl) return;
       const compact = this.useCompactLayout();
-      this.wrap.style.setProperty('--wcc-timeline-pane-width', `${this.scrollEl.clientWidth}px`);
+      this.wrap.setCssProps({ ['--wcc-timeline-pane-width']: `${this.scrollEl.clientWidth}px` });
       if (compact !== this.mobileLayout) {
         const restore = rememberScroll(this.wrap, ['.wcc-timeline-scroll']);
         this.scrollEl.empty();
@@ -137,7 +138,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     });
   }
 
-  async onDataUpdated(): Promise<void> {
+  onDataUpdated(): void {
     if (this.dragging) return;
     applyItemPadding(this.wrap, this.config);
     const width = this.config.get('labelWidth');
@@ -209,17 +210,15 @@ export class BaseTimelineView extends BasesView implements HoverParent {
       cls: 'wcc-timeline-btn',
       attr: { 'aria-label': 'Previous period', title: 'Previous period' },
     });
-    prev.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+    setIcon(prev, 'chevron-left');
     const todayBtn = nav.createEl('button', { text: 'Today', cls: 'wcc-timeline-today' });
     const next = nav.createEl('button', {
       cls: 'wcc-timeline-btn',
       attr: { 'aria-label': 'Next period', title: 'Next period' },
     });
-    next.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+    setIcon(next, 'chevron-right');
 
-    this.titleEl = toolbar.createEl('span', { cls: 'wcc-timeline-title' });
+    this.titleEl = toolbar.createSpan({ cls: 'wcc-timeline-title' });
 
     const zoomGroup = toolbar.createDiv({
       cls: 'wcc-timeline-zoom-group',
@@ -235,7 +234,9 @@ export class BaseTimelineView extends BasesView implements HoverParent {
       title: 'Add new note',
       text: '+',
     });
-    addBtn.addEventListener('click', () => this.createTimelineNote());
+    addBtn.addEventListener('click', () => {
+      void this.createTimelineNote();
+    });
 
     const setZoom = (z: ZoomLevel) => {
       this.zoomLevel = z;
@@ -493,18 +494,21 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     this.scrollEl = scroll;
     this.mobileLayout = this.useCompactLayout();
     this.wrap.toggleClass('wcc-timeline-mobile', this.mobileLayout);
-    this.wrap.style.setProperty('--wcc-timeline-pane-width', `${scroll.clientWidth}px`);
-    this.wrap.style.setProperty(
-      '--wcc-timeline-track-offset',
-      this.mobileLayout ? '0px' : 'var(--wcc-timeline-label-width, 200px)',
-    );
+    this.wrap.setCssProps({ ['--wcc-timeline-pane-width']: `${scroll.clientWidth}px` });
+    this.wrap.setCssProps({
+      ['--wcc-timeline-track-offset']: this.mobileLayout
+        ? '0px'
+        : 'var(--wcc-timeline-label-width, 200px)',
+    });
     this.updateToolbarTitle();
     const cw = this.getColWidth();
     const colCount = this.cols.length;
     const totalWidth = (this.mobileLayout ? 0 : this.labelWidth) + colCount * cw;
 
     const content = scroll.createDiv('wcc-timeline-content');
-    content.style.minWidth = `calc(var(--wcc-timeline-track-offset, 200px) + ${colCount * cw}px)`;
+    content.setCssStyles({
+      minWidth: `calc(var(--wcc-timeline-track-offset, 200px) + ${colCount * cw}px)`,
+    });
 
     this.renderHeader(content, cw, colCount);
 
@@ -547,11 +551,11 @@ export class BaseTimelineView extends BasesView implements HoverParent {
         : 'Configure a start date property in the view settings.';
     }
 
-    content.style.minHeight = `${rowY}px`;
+    content.setCssStyles({ minHeight: `${rowY}px` });
 
     const barsLayer = content.createDiv('wcc-timeline-bars-layer');
-    barsLayer.style.top = `${HEADER_HEIGHT}px`;
-    barsLayer.style.height = `${Math.max(rowY - HEADER_HEIGHT, 0)}px`;
+    barsLayer.setCssStyles({ top: `${HEADER_HEIGHT}px` });
+    barsLayer.setCssStyles({ height: `${Math.max(rowY - HEADER_HEIGHT, 0)}px` });
     this.barsLayerEl = barsLayer;
 
     this.renderTodayLine(barsLayer);
@@ -597,14 +601,17 @@ export class BaseTimelineView extends BasesView implements HoverParent {
         try {
           const start = isEnd ? item.start : date;
           const end = isEnd ? date : item.end < date || item.isSingleDay ? date : item.end;
-          await this.app.fileManager.processFrontMatter(item.file, (fm) => {
-            fm[parsePropertyId(pid).name] = value || null;
-            if (!isEnd && this.endProp && parsePropertyId(this.endProp).type === 'note') {
-              const endName = parsePropertyId(this.endProp).name;
-              if (fm[endName] != null && calendarDay(end) !== calendarDay(item.end))
-                fm[endName] = dateKey(end);
-            }
-          });
+          await this.app.fileManager.processFrontMatter(
+            item.file,
+            (fm: Record<string, unknown>) => {
+              fm[parsePropertyId(pid).name] = value || null;
+              if (!isEnd && this.endProp && parsePropertyId(this.endProp).type === 'note') {
+                const endName = parsePropertyId(this.endProp).name;
+                if (fm[endName] != null && calendarDay(end) !== calendarDay(item.end))
+                  fm[endName] = dateKey(end);
+              }
+            },
+          );
           item.start = start;
           item.end = end;
           item.isSingleDay = !value || calendarDay(start) === calendarDay(end);
@@ -640,7 +647,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
   private setLabelWidth(width: number) {
     this.labelWidth = Math.max(120, Math.min(600, Math.round(width)));
-    this.wrap.style.setProperty('--wcc-timeline-label-width', `${this.labelWidth}px`);
+    this.wrap.setCssProps({ ['--wcc-timeline-label-width']: `${this.labelWidth}px` });
   }
 
   private renderLabelResize(corner: HTMLElement) {
@@ -705,11 +712,13 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     const headerRow = content.createDiv('wcc-timeline-header-row');
 
     const corner = headerRow.createDiv('wcc-timeline-corner');
-    corner.style.width = 'var(--wcc-timeline-track-offset, var(--wcc-timeline-label-width, 200px))';
+    corner.setCssStyles({
+      width: 'var(--wcc-timeline-track-offset, var(--wcc-timeline-label-width, 200px))',
+    });
     if (!this.mobileLayout) this.renderLabelResize(corner);
 
     const headerMain = headerRow.createDiv('wcc-timeline-header-main');
-    headerMain.style.width = `${colCount * cw}px`;
+    headerMain.setCssStyles({ width: `${colCount * cw}px` });
 
     const monthStrip = headerMain.createDiv('wcc-timeline-month-strip');
     const colStrip = headerMain.createDiv('wcc-timeline-col-strip');
@@ -743,7 +752,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
     for (const seg of segs) {
       const el = monthStrip.createDiv('wcc-timeline-month-seg');
-      el.style.width = `${(seg.colEnd - seg.colStart + 1) * cw}px`;
+      el.setCssStyles({ width: `${(seg.colEnd - seg.colStart + 1) * cw}px` });
       el.textContent = seg.label;
     }
 
@@ -751,7 +760,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     for (let i = 0; i < this.cols.length; i++) {
       const col = this.cols[i];
       const colHdr = colStrip.createDiv('wcc-timeline-col-hdr');
-      colHdr.style.width = `${cw}px`;
+      colHdr.setCssStyles({ width: `${cw}px` });
 
       let label = '';
       let cls = '';
@@ -787,8 +796,8 @@ export class BaseTimelineView extends BasesView implements HoverParent {
   ): number {
     const hdr = content.createDiv('wcc-timeline-swimlane-hdr');
     hdr.createSpan({ cls: 'wcc-timeline-swimlane-label', text: label || '(no value)' });
-    hdr.style.top = `${rowY}px`;
-    hdr.style.width = '100%';
+    hdr.setCssStyles({ top: `${rowY}px` });
+    hdr.setCssStyles({ width: '100%' });
     return rowY + GROUP_ROW_HEIGHT;
   }
 
@@ -802,13 +811,15 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     this.rowYMap.set(item.id, rowY);
 
     const row = content.createDiv('wcc-timeline-row');
-    row.style.top = `${rowY}px`;
+    row.setCssStyles({ top: `${rowY}px` });
 
     // Label cell (sticky left)
     const label = row.createDiv('wcc-timeline-row-label');
-    label.style.width = this.mobileLayout
-      ? 'var(--wcc-timeline-pane-width)'
-      : 'var(--wcc-timeline-label-width, 200px)';
+    label.setCssStyles({
+      width: this.mobileLayout
+        ? 'var(--wcc-timeline-pane-width)'
+        : 'var(--wcc-timeline-label-width, 200px)',
+    });
     label.dataset.itemId = item.id;
 
     const titleEl = label.createDiv('wcc-timeline-row-title');
@@ -864,14 +875,14 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
     // Track cells (one per column, for grid lines and shading)
     const track = row.createDiv('wcc-timeline-row-track');
-    track.style.width = `${colCount * cw}px`;
+    track.setCssStyles({ width: `${colCount * cw}px` });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     for (let i = 0; i < colCount; i++) {
       const col = this.cols[i];
       const cell = track.createDiv('wcc-timeline-row-cell');
-      cell.style.width = `${cw}px`;
+      cell.setCssStyles({ width: `${cw}px` });
       if (this.zoomLevel === 'day') {
         const dow = col.getDay();
         if (dow === 0 || dow === 6) cell.addClass('wcc-timeline-cell-weekend');
@@ -888,11 +899,10 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     const rowHeight = this.mobileLayout
       ? Math.ceil(label.getBoundingClientRect().height) + 64
       : Math.max(ROW_HEIGHT, Math.ceil(label.getBoundingClientRect().height));
-    row.style.height = `${rowHeight}px`;
-    label.style.setProperty(
-      '--wcc-timeline-label-height',
-      `${this.mobileLayout ? rowHeight - 64 : rowHeight}px`,
-    );
+    row.setCssStyles({ height: `${rowHeight}px` });
+    label.setCssProps({
+      ['--wcc-timeline-label-height']: `${this.mobileLayout ? rowHeight - 64 : rowHeight}px`,
+    });
     this.rowHeightMap.set(item.id, rowHeight);
     this.rowObserver.observe(label);
     return rowY + rowHeight;
@@ -914,28 +924,27 @@ export class BaseTimelineView extends BasesView implements HoverParent {
         ':scope > .wcc-timeline-row, :scope > .wcc-timeline-swimlane-hdr',
       ),
     )) {
-      row.style.top = `${y}px`;
+      row.setCssStyles({ top: `${y}px` });
       const label = row.querySelector<HTMLElement>('.wcc-timeline-row-label');
       const height = label
         ? this.mobileLayout
           ? Math.ceil(label.getBoundingClientRect().height) + 64
           : Math.max(ROW_HEIGHT, Math.ceil(label.getBoundingClientRect().height))
         : GROUP_ROW_HEIGHT;
-      row.style.height = `${height}px`;
-      label?.style.setProperty(
-        '--wcc-timeline-label-height',
-        `${this.mobileLayout ? height - 64 : height}px`,
-      );
+      row.setCssStyles({ height: `${height}px` });
+      label?.setCssProps({
+        ['--wcc-timeline-label-height']: `${this.mobileLayout ? height - 64 : height}px`,
+      });
       if (label?.dataset.itemId) {
         this.rowHeightMap.set(label.dataset.itemId, height);
         this.rowYMap.set(label.dataset.itemId, y);
         const bar = bars.get(label.dataset.itemId);
-        if (bar) bar.style.top = `${this.getBarTop(y, height)}px`;
+        if (bar) bar.setCssStyles({ top: `${this.getBarTop(y, height)}px` });
       }
       y += height;
     }
-    content.style.minHeight = `${y}px`;
-    this.barsLayerEl.style.height = `${Math.max(0, y - HEADER_HEIGHT)}px`;
+    content.setCssStyles({ minHeight: `${y}px` });
+    this.barsLayerEl.setCssStyles({ height: `${Math.max(0, y - HEADER_HEIGHT)}px` });
   }
 
   private renderTodayLine(barsLayer: HTMLElement) {
@@ -945,7 +954,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     if (today < this.windowStart || today > this.windowEnd) return;
 
     const line = barsLayer.createDiv('wcc-timeline-today-line');
-    line.style.left = `${this.dateToPixel(today)}px`;
+    line.setCssStyles({ left: `${this.dateToPixel(today)}px` });
   }
 
   private renderBars(barsLayer: HTMLElement) {
@@ -965,13 +974,15 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
       const bar = barsLayer.createDiv('wcc-timeline-bar');
       bar.dataset.itemId = item.id;
-      bar.style.left = `${left}px`;
-      bar.style.width = `${width}px`;
-      bar.style.top = `${barTop}px`;
+      bar.setCssStyles({ left: `${left}px` });
+      bar.setCssStyles({ width: `${width}px` });
+      bar.setCssStyles({ top: `${barTop}px` });
 
       if (item.color) {
-        bar.style.background = `color-mix(in srgb, ${item.color} 35%, var(--background-primary))`;
-        bar.style.borderLeftColor = item.color;
+        bar.setCssStyles({
+          background: `color-mix(in srgb, ${item.color} 35%, var(--background-primary))`,
+        });
+        bar.setCssStyles({ borderLeftColor: item.color });
       }
       if (item.done) bar.addClass('wcc-timeline-bar-done');
 
@@ -1049,8 +1060,8 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     const left = this.dateToPixel(start);
     const endNext = shiftDays(end, 1);
     const width = Math.max(this.dateToPixel(endNext) - left, this.mobileLayout ? 44 : 4);
-    barEl.style.left = `${left}px`;
-    barEl.style.width = `${width}px`;
+    barEl.setCssStyles({ left: `${left}px` });
+    barEl.setCssStyles({ width: `${width}px` });
   }
 
   private startTimelineDrag(surface: HTMLElement, event: PointerEvent): boolean {
@@ -1158,10 +1169,13 @@ export class BaseTimelineView extends BasesView implements HoverParent {
       this.endProp && parsePropertyId(this.endProp).type === 'note'
         ? parsePropertyId(this.endProp).name
         : null;
-    await this.app.fileManager.processFrontMatter(state.item.file, (fm) => {
-      fm[dateName] = dateKey(state.nextStart);
-      if (endName) fm[endName] = dateKey(state.nextEnd);
-    });
+    await this.app.fileManager.processFrontMatter(
+      state.item.file,
+      (fm: Record<string, unknown>) => {
+        fm[dateName] = dateKey(state.nextStart);
+        if (endName) fm[endName] = dateKey(state.nextEnd);
+      },
+    );
     state.item.start = state.nextStart;
     state.item.end = state.nextEnd;
     state.item.isSingleDay = calendarDay(state.nextStart) === calendarDay(state.nextEnd);
@@ -1211,7 +1225,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
           .onClick(async () => {
             if (!this.dateProp) return;
             const modal = new DatePromptModal(this.app, item.start, 'Change start date');
-            const newDate = await modal.open();
+            const newDate = await modal.prompt();
             if (!newDate || dateKey(newDate) === dateKey(item.start)) return;
             await writeProp(this.app, item.file, this.dateProp, dateKey(newDate));
             item.start = newDate;
@@ -1227,7 +1241,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
             .setIcon('calendar-range')
             .onClick(async () => {
               const modal = new DatePromptModal(this.app, item.end, 'Change end date');
-              const newDate = await modal.open();
+              const newDate = await modal.prompt();
               if (!newDate || dateKey(newDate) === dateKey(item.end)) return;
               if (newDate >= item.start) {
                 await writeProp(this.app, item.file, this.endProp!, dateKey(newDate));
@@ -1261,7 +1275,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
           .setTitle('Delete')
           .setIcon('trash')
           .onClick(async () => {
-            await this.app.vault.trash(item.file, true);
+            await this.app.fileManager.trashFile(item.file);
           }),
       );
 

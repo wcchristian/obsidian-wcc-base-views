@@ -35,6 +35,7 @@ export function migrateSettings(value: unknown): BaseViewsSettings {
     enableTable: raw.enableTable !== false,
     localOrder,
   };
-  if (Array.isArray(raw.quickAddProfiles)) settings.quickAddProfiles = [...raw.quickAddProfiles];
+  if (Array.isArray(raw.quickAddProfiles))
+    settings.quickAddProfiles = [...(raw.quickAddProfiles as unknown[])];
   return settings;
 }

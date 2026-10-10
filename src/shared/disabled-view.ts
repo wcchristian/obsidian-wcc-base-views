@@ -13,5 +13,5 @@ export class DisabledView extends BasesView {
     });
   }
 
-  async onDataUpdated(): Promise<void> {}
+  onDataUpdated(): void {}
 }

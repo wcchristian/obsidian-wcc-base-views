@@ -26,7 +26,7 @@ export function propertyLinks(raw: string, shortInternal = false): PropertyLinkP
   const parts: PropertyLinkPart[] = [];
   let offset = 0;
   for (const match of raw.matchAll(pattern)) {
-    const start = match.index!;
+    const start = match.index;
     if (start > offset) parts.push({ text: raw.slice(offset, start) });
     if (match[1]) {
       const [target, ...alias] = match[1].split('|');

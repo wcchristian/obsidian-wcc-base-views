@@ -68,7 +68,7 @@ export class BaseTableView extends BaseListView {
         cls: 'wcc-table-empty',
         text: 'Choose columns from the Bases Properties menu.',
       });
-      const add = this.wrap.createEl('button', { text: '+ Add note', attr: { type: 'button' } });
+      const add = this.wrap.createEl('button', { text: 'Add note', attr: { type: 'button' } });
       add.onclick = () => void this.createListItem(NULL_KEY);
       return;
     }
@@ -177,7 +177,7 @@ export class BaseTableView extends BaseListView {
     });
     row.dataset.itemId = item.id;
     const color = this.getItemColor(item);
-    if (color) row.style.setProperty('--wcc-table-row-color', color);
+    if (color) row.setCssProps({ ['--wcc-table-row-color']: color });
 
     let titleCell: HTMLTableCellElement | null = null;
     for (const pid of this.columns) {
@@ -265,7 +265,7 @@ export class BaseTableView extends BaseListView {
       .createEl('tr', { cls: 'wcc-table-add-row' })
       .createEl('td', { attr: { colspan: String(this.columns.length) } });
     const button = cell.createEl('button', {
-      text: '+ Add note',
+      text: 'Add note',
       cls: 'wcc-table-add',
       attr: { type: 'button', 'aria-label': key === NULL_KEY ? 'Add note' : `Add note in ${key}` },
     });
@@ -280,13 +280,15 @@ export class BaseTableView extends BaseListView {
   }
 
   private applyWidths() {
-    for (const [pid, col] of this.columnEls) col.style.width = `${this.widths.get(pid)}px`;
-    this.wrap.style.setProperty(
-      '--wcc-table-name-width',
-      `${this.widths.get('file.name') ?? 260}px`,
-    );
+    for (const [pid, col] of this.columnEls)
+      col.setCssStyles({ width: `${this.widths.get(pid)}px` });
+    this.wrap.setCssProps({
+      ['--wcc-table-name-width']: `${this.widths.get('file.name') ?? 260}px`,
+    });
     if (this.table)
-      this.table.style.width = `${[...this.widths.values()].reduce((sum, width) => sum + width, 0)}px`;
+      this.table.setCssStyles({
+        width: `${[...this.widths.values()].reduce((sum, width) => sum + width, 0)}px`,
+      });
   }
 
   private makeColumnResize(header: HTMLElement, pid: BasesPropertyId) {

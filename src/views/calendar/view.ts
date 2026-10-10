@@ -1,3 +1,4 @@
+import { setIcon } from 'obsidian';
 import { CardDetails } from '../../shared/card-details';
 import { distributeEvents, sortSegments, assignLanes } from './layout';
 import type { EventSegment } from './layout';
@@ -41,6 +42,9 @@ const LANE_HEIGHT = 16;
 const LANE_GAP = 2;
 
 export class BaseCalendarView extends BasesView implements HoverParent {
+  private get win(): Window {
+    return this.wrap.ownerDocument.defaultView!;
+  }
   private cardDetails?: CardDetails;
   readonly type = VIEW_TYPE_BASE_CALENDAR;
   hoverPopover: HoverPopover | null = null;
@@ -143,7 +147,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.resizeObserver.observe(this.wrap);
   }
 
-  async onDataUpdated(): Promise<void> {
+  onDataUpdated(): void {
     if (this.dragging) return;
     applyViewDensity(this.wrap, this.config);
     const restoreScroll = rememberScroll(this.wrap, [
@@ -181,7 +185,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       sop && parsePropertyId(sop).type === 'note' ? parsePropertyId(sop).name : null;
 
     this.buildUI(this.wrap);
-    await this.loadData();
+    this.loadData();
     restoreScroll();
   }
 
@@ -196,8 +200,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       cls: 'wcc-calendar-btn',
       attr: { 'aria-label': 'Previous period', title: 'Previous period' },
     });
-    prev.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>';
+    setIcon(prev, 'chevron-left');
 
     const today = nav.createEl('button', { text: 'Today', cls: 'wcc-calendar-today' });
 
@@ -205,8 +208,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       cls: 'wcc-calendar-btn',
       attr: { 'aria-label': 'Next period', title: 'Next period' },
     });
-    next.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+    setIcon(next, 'chevron-right');
 
     this.titleEl = hdr.createEl('h2', { cls: 'wcc-calendar-title' });
 
@@ -263,7 +265,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.render();
 
     if (this.mouseUpHandler) {
-      document.removeEventListener('mouseup', this.mouseUpHandler);
+      this.wrap.ownerDocument.removeEventListener('mouseup', this.mouseUpHandler);
     }
 
     const finishSelection = async () => {
@@ -279,8 +281,13 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       this.selectionStart = null;
       this.selectionEnd = null;
     };
-    this.mouseUpHandler = finishSelection;
-    document.addEventListener('mouseup', this.mouseUpHandler);
+    this.mouseUpHandler = () => {
+      void finishSelection().catch((error: unknown) => {
+        console.error(error);
+        new Notice('Failed to create note from the selection.');
+      });
+    };
+    this.wrap.ownerDocument.addEventListener('mouseup', this.mouseUpHandler);
   }
 
   private getSelectionRange(): [DayInfo | null, DayInfo | null] {
@@ -332,7 +339,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.bodyEl.removeClass('wcc-calendar-body-week');
     this.bodyEl.removeClass('wcc-calendar-body-agenda');
     this.bodyEl.removeClass('wcc-calendar-body-month-expand');
-    this.hrowEl.style.display = '';
+    this.hrowEl.setCssStyles({ display: '' });
 
     if (this.viewMode === 'month') {
       this.bodyEl.addClass('wcc-calendar-body-month');
@@ -346,7 +353,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       else this.renderWeek();
     } else {
       this.bodyEl.addClass('wcc-calendar-body-agenda');
-      this.hrowEl.style.display = 'none';
+      this.hrowEl.setCssStyles({ display: 'none' });
       this.renderAgenda();
     }
 
@@ -426,7 +433,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       month: 'long',
       year: 'numeric',
     });
-    this.hrowEl.style.setProperty('--wcc-calendar-cols', '7');
+    this.hrowEl.setCssProps({ ['--wcc-calendar-cols']: '7' });
     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach((name) =>
       this.hrowEl!.createDiv({ cls: 'wcc-calendar-dname', text: name }),
     );
@@ -445,7 +452,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
   private renderCompactWeek() {
     if (!this.bodyEl || !this.hrowEl || !this.titleEl) return;
-    this.hrowEl.style.display = 'none';
+    this.hrowEl.setCssStyles({ display: 'none' });
     const current = new Date(this.curDate);
     current.setHours(0, 0, 0, 0);
     const start = this.weekRolling ? current : shiftDays(current, -current.getDay());
@@ -509,13 +516,13 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       }),
     });
     const add = header.createEl('button', {
-      text: '+ Add note',
+      text: 'Add note',
       cls: 'wcc-calendar-compact-add',
       attr: { type: 'button', 'aria-label': `Add note for ${day.dateKey}` },
     });
     add.onclick = (event) => {
       event.stopPropagation();
-      this.createNote(day.date, null);
+      void this.createNote(day.date, null);
     };
     day.evList = this.mobilePanel.createDiv('wcc-calendar-compact-events');
     if (!day.events.length)
@@ -553,10 +560,10 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     });
 
     // Always 7 columns for month view
-    this.bodyEl.style.setProperty('--wcc-calendar-cols', '7');
-    this.hrowEl.style.setProperty('--wcc-calendar-cols', '7');
+    this.bodyEl.setCssProps({ ['--wcc-calendar-cols']: '7' });
+    this.hrowEl.setCssProps({ ['--wcc-calendar-cols']: '7' });
     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach((d) =>
-      this.hrowEl!.createEl('div', { text: d, cls: 'wcc-calendar-dname' }),
+      this.hrowEl!.createDiv({ text: d, cls: 'wcc-calendar-dname' }),
     );
 
     const yr = this.curDate.getFullYear();
@@ -620,14 +627,14 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.titleEl.textContent = `${fmt(weekStart)} — ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
 
     // Set CSS variable for column count
-    this.bodyEl.style.setProperty('--wcc-calendar-cols', String(this.weekDays));
-    this.hrowEl.style.setProperty('--wcc-calendar-cols', String(this.weekDays));
+    this.bodyEl.setCssProps({ ['--wcc-calendar-cols']: String(this.weekDays) });
+    this.hrowEl.setCssProps({ ['--wcc-calendar-cols']: String(this.weekDays) });
 
     // Generate day headers from actual dates
     for (let c = 0; c < this.weekDays; c++) {
       const dt = shiftDays(weekStart, c);
       const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
-      this.hrowEl.createEl('div', { text: dayName, cls: 'wcc-calendar-dname' });
+      this.hrowEl.createDiv({ text: dayName, cls: 'wcc-calendar-dname' });
     }
 
     const weekRow = this.bodyEl.createDiv('wcc-calendar-week');
@@ -680,12 +687,11 @@ export class BaseCalendarView extends BasesView implements HoverParent {
           type: 'button',
         },
       });
-      addBtn.innerHTML =
-        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+      setIcon(addBtn, 'plus');
       addBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.createNote(dt, null);
+        void this.createNote(dt, null);
       };
       const info: DayInfo = {
         dateKey: dk,
@@ -717,7 +723,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     const cell = parent.createDiv(
       'wcc-calendar-cell' + (cur ? '' : ' wcc-calendar-other') + (isT ? ' wcc-calendar-today' : ''),
     );
-    const num = cell.createEl('span', { cls: 'wcc-calendar-num', text: String(dt.getDate()) });
+    const num = cell.createSpan({ cls: 'wcc-calendar-num', text: String(dt.getDate()) });
     const addBtn = cell.createEl('button', {
       cls: 'wcc-calendar-add',
       attr: {
@@ -726,12 +732,11 @@ export class BaseCalendarView extends BasesView implements HoverParent {
         type: 'button',
       },
     });
-    addBtn.innerHTML =
-      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+    setIcon(addBtn, 'plus');
     addBtn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.createNote(dt, null);
+      void this.createNote(dt, null);
     };
     addBtn.addEventListener('mousedown', (e) => {
       e.stopPropagation();
@@ -777,7 +782,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       if ((e.target as HTMLElement).closest('.wcc-calendar-add')) return;
       e.preventDefault();
       e.stopPropagation();
-      this.createNote(dt, null);
+      void this.createNote(dt, null);
     });
     return info;
   }
@@ -793,7 +798,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.weeks.forEach((wk) => {
       if (wk.overlay) {
         wk.overlay.empty();
-        wk.overlay.parentElement!.style.minHeight = '';
+        wk.overlay.parentElement!.setCssStyles({ minHeight: '' });
       }
     });
 
@@ -847,11 +852,11 @@ export class BaseCalendarView extends BasesView implements HoverParent {
         let hoverTimer: number | null = null;
         d.cell!.addEventListener('mouseenter', () => {
           if (this.morePopover || this.dragging) return; // already open (click-pinned)
-          hoverTimer = window.setTimeout(() => this.openMorePopover(d, more, true), 200);
+          hoverTimer = this.win.setTimeout(() => this.openMorePopover(d, more, true), 200);
         });
         d.cell!.addEventListener('mouseleave', () => {
           if (hoverTimer !== null) {
-            clearTimeout(hoverTimer);
+            this.win.clearTimeout(hoverTimer);
             hoverTimer = null;
           }
         });
@@ -874,21 +879,25 @@ export class BaseCalendarView extends BasesView implements HoverParent {
             bar.dataset.eventId = seg.ev.id;
             const color = this.getEventColor(seg.ev);
             if (color) {
-              bar.style.background = `color-mix(in srgb, ${color} 60%, var(--background-primary))`;
+              bar.setCssStyles({
+                background: `color-mix(in srgb, ${color} 60%, var(--background-primary))`,
+              });
             } else {
-              bar.style.background = `color-mix(in srgb, var(--interactive-accent) 35%, var(--background-primary))`;
+              bar.setCssStyles({
+                background: `color-mix(in srgb, var(--interactive-accent) 35%, var(--background-primary))`,
+              });
             }
             if (col === seg.startCol) {
               bar.createSpan({ text: seg.ev.title });
               bar.title = seg.ev.title;
             } else {
-              bar.style.opacity = '0.6';
+              bar.setCssStyles({ opacity: '0.6' });
             }
             dragGrip(bar, `Drag ${seg.ev.title} to move dates`);
             bar.onclick = (e) => {
               e.stopPropagation();
-              const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-              leaf?.openFile(seg.ev.file);
+              const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+              void leaf?.openFile(seg.ev.file);
             };
           }
         }
@@ -897,9 +906,9 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
       if (!wk.overlay) return;
       if (segs.length === 0) {
-        wk.overlay.style.height = '0px';
+        wk.overlay.setCssStyles({ height: '0px' });
         wk.days.forEach((d) => {
-          if (d.evList) d.evList.style.paddingTop = '0px';
+          if (d.evList) d.evList.setCssStyles({ paddingTop: '0px' });
         });
         return;
       }
@@ -918,19 +927,19 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       laneHeights.forEach((height, lane) => {
         bars.forEach((bar, i) => {
           if (assigned[i] === lane) {
-            bar.style.top = `${overlayHeight}px`;
-            bar.style.height = `${height}px`;
+            bar.setCssStyles({ top: `${overlayHeight}px` });
+            bar.setCssStyles({ height: `${height}px` });
           }
         });
         overlayHeight += height + LANE_GAP;
       });
       overlayHeight -= LANE_GAP;
-      wk.overlay.style.height = `${overlayHeight}px`;
+      wk.overlay.setCssStyles({ height: `${overlayHeight}px` });
       // Keep taller wrapped lanes within their own week instead of covering the next one.
-      wk.overlay.parentElement!.style.minHeight = `${overlayHeight + 40}px`;
+      wk.overlay.parentElement!.setCssStyles({ minHeight: `${overlayHeight + 40}px` });
 
       wk.days.forEach((d) => {
-        if (d.evList) d.evList.style.paddingTop = `${overlayHeight + 4}px`;
+        if (d.evList) d.evList.setCssStyles({ paddingTop: `${overlayHeight + 4}px` });
       });
     });
   }
@@ -978,17 +987,19 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       'wcc-calendar-md-bar' + (seg.ev.done ? ' wcc-calendar-md-done' : ''),
     );
     bar.dataset.eventId = seg.ev.id;
-    bar.style.minHeight = `${this.getLaneHeight()}px`;
+    bar.setCssStyles({ minHeight: `${this.getLaneHeight()}px` });
     dragGrip(bar, `Drag ${seg.ev.title} to move dates`);
-    bar.style.gridColumn = `${seg.startCol + 1} / ${seg.endCol + 2}`;
-    bar.style.top = `${lane * (this.getLaneHeight() + LANE_GAP)}px`;
+    bar.setCssStyles({ gridColumn: `${seg.startCol + 1} / ${seg.endCol + 2}` });
+    bar.setCssStyles({ top: `${lane * (this.getLaneHeight() + LANE_GAP)}px` });
     if (!seg.isStart) bar.addClass('wcc-calendar-md-cont-left');
     if (!seg.isEnd) bar.addClass('wcc-calendar-md-cont-right');
 
     const color = this.getEventColor(seg.ev);
     if (color) {
-      bar.style.background = `color-mix(in srgb, ${color} 35%, var(--background-primary))`;
-      if (seg.isStart) bar.style.borderLeft = `3px solid ${color}`;
+      bar.setCssStyles({
+        background: `color-mix(in srgb, ${color} 35%, var(--background-primary))`,
+      });
+      if (seg.isStart) bar.setCssStyles({ borderLeft: `3px solid ${color}` });
     }
 
     if (this.doneProp) {
@@ -1028,8 +1039,8 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     label.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-      leaf?.openFile(seg.ev.file);
+      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+      void leaf?.openFile(seg.ev.file);
     };
     bar.onmouseover = (e) => {
       this.app.workspace.trigger('hover-link', {
@@ -1057,8 +1068,10 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     const tint = compact ? 6 : 10;
     const color = this.getEventColor(ev);
     if (color) {
-      chip.style.borderLeft = `2px solid ${color}`;
-      chip.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
+      chip.setCssStyles({ borderLeft: `2px solid ${color}` });
+      chip.setCssStyles({
+        background: `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`,
+      });
     }
 
     const titleRow = chip.createDiv('wcc-calendar-chip-title');
@@ -1107,8 +1120,8 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     link.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-      leaf?.openFile(ev.file);
+      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+      void leaf?.openFile(ev.file);
     };
     link.onmouseover = (e) => {
       this.app.workspace.trigger('hover-link', {
@@ -1125,8 +1138,8 @@ export class BaseCalendarView extends BasesView implements HoverParent {
         return;
       e.preventDefault();
       e.stopPropagation();
-      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-      leaf?.openFile(ev.file);
+      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+      void leaf?.openFile(ev.file);
     };
 
     chip.addEventListener('mousedown', (e) => {
@@ -1155,10 +1168,14 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
     if (color) {
       chip.addEventListener('mouseenter', () => {
-        chip.style.background = `color-mix(in srgb, ${color} ${compact ? 10 : 16}%, var(--background-primary))`;
+        chip.setCssStyles({
+          background: `color-mix(in srgb, ${color} ${compact ? 10 : 16}%, var(--background-primary))`,
+        });
       });
       chip.addEventListener('mouseleave', () => {
-        chip.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
+        chip.setCssStyles({
+          background: `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`,
+        });
       });
     }
 
@@ -1213,7 +1230,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
         .setTitle('Open in new tab')
         .setIcon('file-plus')
         .onClick(() => {
-          this.app.workspace.getLeaf('tab').openFile(ev.file);
+          void this.app.workspace.getLeaf('tab').openFile(ev.file);
         }),
     );
     menu.addItem((item) =>
@@ -1221,7 +1238,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
         .setTitle('Open to the right')
         .setIcon('separator-vertical')
         .onClick(() => {
-          this.app.workspace.getLeaf('split').openFile(ev.file);
+          void this.app.workspace.getLeaf('split').openFile(ev.file);
         }),
     );
     menu.addSeparator();
@@ -1234,7 +1251,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
             this.app,
             ev.start,
             `Change date for "${ev.title}"`,
-          ).open();
+          ).prompt();
           if (d) await this.moveEvent(ev.id, d);
         }),
     );
@@ -1272,7 +1289,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     }
     try {
       const newFile = await this.app.vault.copy(ev.file, path);
-      this.app.workspace.getLeaf(false)?.openFile(newFile);
+      void this.app.workspace.getLeaf(false)?.openFile(newFile);
     } catch (err) {
       console.error(err);
       new Notice('Failed to duplicate');
@@ -1281,7 +1298,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
   private openMorePopover(day: DayInfo, anchor: HTMLElement, isHover: boolean) {
     this.closeMorePopover();
-    const pop = document.body.createDiv('wcc-calendar-more-popover');
+    const pop = this.wrap.ownerDocument.body.createDiv('wcc-calendar-more-popover');
     pop.classList.toggle('wcc-touch-drag', this.wrap.classList.contains('wcc-touch-drag'));
     applyViewDensity(pop, this.config);
     this.morePopover = pop;
@@ -1297,18 +1314,18 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.renderDayChips(list, day.events);
 
     const rect = anchor.getBoundingClientRect();
-    pop.style.position = 'fixed';
-    pop.style.left = `${rect.left}px`;
-    pop.style.top = `${rect.bottom + 4}px`;
-    pop.style.minWidth = `${Math.max(rect.width, 220)}px`;
+    pop.setCssStyles({ position: 'fixed' });
+    pop.setCssStyles({ left: `${rect.left}px` });
+    pop.setCssStyles({ top: `${rect.bottom + 4}px` });
+    pop.setCssStyles({ minWidth: `${Math.max(rect.width, 220)}px` });
 
-    requestAnimationFrame(() => {
+    this.win.requestAnimationFrame(() => {
       const popRect = pop.getBoundingClientRect();
-      if (popRect.right > window.innerWidth - 8) {
-        pop.style.left = `${window.innerWidth - popRect.width - 8}px`;
+      if (popRect.right > this.win.innerWidth - 8) {
+        pop.setCssStyles({ left: `${this.win.innerWidth - popRect.width - 8}px` });
       }
-      if (popRect.bottom > window.innerHeight - 8) {
-        pop.style.top = `${rect.top - popRect.height - 4}px`;
+      if (popRect.bottom > this.win.innerHeight - 8) {
+        pop.setCssStyles({ top: `${rect.top - popRect.height - 4}px` });
       }
     });
 
@@ -1325,7 +1342,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       if (cellEl) {
         cellEl.addEventListener('mouseleave', () => {
           insideCell = false;
-          setTimeout(checkClose, 50);
+          this.win.setTimeout(checkClose, 50);
         });
         cellEl.addEventListener('mouseenter', () => {
           insideCell = true;
@@ -1337,7 +1354,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       });
       pop.addEventListener('mouseleave', () => {
         insidePop = false;
-        setTimeout(checkClose, 50);
+        this.win.setTimeout(checkClose, 50);
       });
     } else {
       const handler = (e: MouseEvent) => {
@@ -1346,7 +1363,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
         this.closeMorePopover();
       };
       this.moreOutsideHandler = handler;
-      setTimeout(() => document.addEventListener('mousedown', handler), 0);
+      this.win.setTimeout(() => this.wrap.ownerDocument.addEventListener('mousedown', handler), 0);
     }
   }
 
@@ -1356,7 +1373,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       this.morePopover = null;
     }
     if (this.moreOutsideHandler) {
-      document.removeEventListener('mousedown', this.moreOutsideHandler);
+      this.wrap.ownerDocument.removeEventListener('mousedown', this.moreOutsideHandler);
       this.moreOutsideHandler = null;
     }
   }
@@ -1402,7 +1419,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       day: 'numeric',
     });
     if (!day.evList) {
-      this.dropIndicator.show(day.cell!, null, day.cell!, `Move to ${dateLabel}`);
+      this.dropIndicator.show(day.cell!, null, day.cell, `Move to ${dateLabel}`);
       return;
     }
     const hit = this.wrap.ownerDocument.elementFromPoint(point.x, point.y);
@@ -1491,7 +1508,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       this.endProp && parsePropertyId(this.endProp).type === 'note'
         ? parsePropertyId(this.endProp).name
         : null;
-    await this.app.fileManager.processFrontMatter(ev.file, (fm) => {
+    await this.app.fileManager.processFrontMatter(ev.file, (fm: Record<string, unknown>) => {
       fm[dateName] = dateKey(newDate);
       if (newEnd && endName) fm[endName] = dateKey(newEnd);
     });
@@ -1510,7 +1527,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     return createViewNote(this, `Note ${dateKey(startDate)}`, properties);
   }
 
-  private async loadData() {
+  private loadData() {
     const groups = this.data.groupedData;
     if (!groups?.length) return;
 

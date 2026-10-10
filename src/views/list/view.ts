@@ -1,3 +1,4 @@
+import { setIcon } from 'obsidian';
 import { CardDetails } from '../../shared/card-details';
 import type { ListItem } from './model';
 import { createBackground } from '../../shared/background';
@@ -92,7 +93,7 @@ export class BaseListView extends BasesView implements HoverParent {
     });
   }
 
-  async onDataUpdated(): Promise<void> {
+  onDataUpdated(): void {
     if (this.dragging) return;
     applyViewDensity(this.wrap, this.config);
     const restoreScroll = rememberScroll(this.wrap, []);
@@ -172,11 +173,11 @@ export class BaseListView extends BasesView implements HoverParent {
           type: 'button',
         },
       });
-      addBtn.innerHTML = plusSvg();
+      setIcon(addBtn, 'plus');
       addBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.createListItem(groupKey);
+        void this.createListItem(groupKey);
       };
 
       const listEl = section.createDiv('wcc-list-items');
@@ -190,7 +191,7 @@ export class BaseListView extends BasesView implements HoverParent {
     const items: ListItem[] = entries
       .filter((e) => e.file instanceof TFile)
       .map((e) => {
-        const file = e.file as TFile;
+        const file = e.file;
         let done = false;
         if (this.doneProp) {
           const dv = e.getValue(this.doneProp);
@@ -223,8 +224,10 @@ export class BaseListView extends BasesView implements HoverParent {
     const compact = isCompact(this.config);
     const tint = compact ? 6 : 10;
     if (color) {
-      row.style.borderLeft = `3px solid ${color}`;
-      row.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
+      row.setCssStyles({ borderLeft: `3px solid ${color}` });
+      row.setCssStyles({
+        background: `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`,
+      });
     }
 
     const titleRow = row.createDiv('wcc-list-row-title');
@@ -235,8 +238,8 @@ export class BaseListView extends BasesView implements HoverParent {
         return;
       e.preventDefault();
       e.stopPropagation();
-      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-      leaf?.openFile(item.file);
+      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+      void leaf?.openFile(item.file);
     };
 
     // Middle-click opens in a new tab, like a normal Obsidian link
@@ -255,15 +258,19 @@ export class BaseListView extends BasesView implements HoverParent {
         return;
       e.preventDefault();
       e.stopPropagation();
-      this.app.workspace.getLeaf('tab').openFile(item.file);
+      void this.app.workspace.getLeaf('tab').openFile(item.file);
     });
 
     if (color) {
       row.addEventListener('mouseenter', () => {
-        row.style.background = `color-mix(in srgb, ${color} ${compact ? 10 : 16}%, var(--background-primary))`;
+        row.setCssStyles({
+          background: `color-mix(in srgb, ${color} ${compact ? 10 : 16}%, var(--background-primary))`,
+        });
       });
       row.addEventListener('mouseleave', () => {
-        row.style.background = `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`;
+        row.setCssStyles({
+          background: `color-mix(in srgb, ${color} ${tint}%, var(--background-primary))`,
+        });
       });
     }
 
@@ -342,8 +349,8 @@ export class BaseListView extends BasesView implements HoverParent {
     link.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e as MouseEvent));
-      leaf?.openFile(item.file);
+      const leaf = this.app.workspace.getLeaf(Keymap.isModEvent(e));
+      void leaf?.openFile(item.file);
     };
     link.onmouseover = (e) => {
       this.app.workspace.trigger('hover-link', {
@@ -401,7 +408,7 @@ export class BaseListView extends BasesView implements HoverParent {
     const group = list.dataset.listGroup ?? NULL_KEY;
     const crossing = group !== this.dragGroupKey;
     if (!crossing && !this.sortOrderProp) {
-      new Notice('Select a numeric Sort order property to save manual list order.');
+      new Notice('Select a numeric sort order property to save manual list order.');
       return;
     }
     const file = this.app.vault.getFileByPath(id);
@@ -443,7 +450,7 @@ export class BaseListView extends BasesView implements HoverParent {
         .setTitle('Open in new tab')
         .setIcon('file-plus')
         .onClick(() => {
-          this.app.workspace.getLeaf('tab').openFile(item.file);
+          void this.app.workspace.getLeaf('tab').openFile(item.file);
         }),
     );
     menu.addItem((i) =>
@@ -451,7 +458,7 @@ export class BaseListView extends BasesView implements HoverParent {
         .setTitle('Open to the right')
         .setIcon('separator-vertical')
         .onClick(() => {
-          this.app.workspace.getLeaf('split').openFile(item.file);
+          void this.app.workspace.getLeaf('split').openFile(item.file);
         }),
     );
     menu.addSeparator();
@@ -488,7 +495,7 @@ export class BaseListView extends BasesView implements HoverParent {
     }
     try {
       const newFile = await this.app.vault.copy(item.file, path);
-      this.app.workspace.getLeaf(false)?.openFile(newFile);
+      void this.app.workspace.getLeaf(false)?.openFile(newFile);
     } catch (err) {
       console.error(err);
       new Notice('Failed to duplicate');
@@ -502,21 +509,18 @@ export class BaseListView extends BasesView implements HoverParent {
       cls: 'wcc-list-add wcc-list-add-footer',
       attr: { 'aria-label': 'Add note', title: 'Add note', type: 'button' },
     });
-    btn.innerHTML = plusSvg() + ' <span>Add note</span>';
+    setIcon(btn, 'plus');
+    btn.createSpan({ text: 'Add note' });
     btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.createListItem(groupKey);
+      void this.createListItem(groupKey);
     };
   }
 
   protected createListItem(groupKey: string) {
     return createViewNote(this, undefined, groupDefaults(this, this.getGroupByPropId(), groupKey));
   }
-}
-
-function plusSvg(): string {
-  return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
 }
 
 export type { ListItem } from './model';

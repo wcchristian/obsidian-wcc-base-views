@@ -6,7 +6,7 @@ This is a pre-1.0 plugin. The package/repository name is `obsidian-wcc-base-view
 
 ## Development
 
-Use Node.js 18 or later and npm:
+Use Node.js 22 or later and npm:
 
 ```sh
 npm ci
@@ -14,21 +14,22 @@ npm run check
 npm run watch
 ```
 
-`check` runs type checking, lint, formatting checks, lightweight Node tests, and the production build. It does not require Obsidian, Playwright, or a browser download.
+`check` runs type checking, the official Obsidian review linter with zero warnings allowed, formatting checks, lightweight Node tests, the production build, and release validation. It does not require Obsidian, Playwright, or a browser download.
 
 Install this checkout in a test vault as `.obsidian/plugins/wcc-base-views`, or symlink it there. Enable **WCC Base Views** in Community plugins. After building, reload the plugin or restart Obsidian. Keep experiments in a test vault because property editing writes to notes.
 
-| Command                | Purpose                                  |
-| ---------------------- | ---------------------------------------- |
-| `npm run dev`          | Build once with a source map             |
-| `npm run watch`        | Rebuild after source changes             |
-| `npm run build`        | Create the production `main.js`          |
-| `npm run typecheck`    | Check strict types and unused code       |
-| `npm run lint`         | Check source rules                       |
-| `npm run format`       | Apply consistent formatting              |
-| `npm run format:check` | Check formatting without modifying files |
-| `npm test`             | Run lightweight behavior tests           |
-| `npm run check`        | Run all standard checks and build        |
+| Command                    | Purpose                                  |
+| -------------------------- | ---------------------------------------- |
+| `npm run dev`              | Build once with a source map             |
+| `npm run watch`            | Rebuild after source changes             |
+| `npm run build`            | Create the production `main.js`          |
+| `npm run typecheck`        | Check strict types and unused code       |
+| `npm run lint`             | Check official review rules              |
+| `npm run format`           | Apply consistent formatting              |
+| `npm run format:check`     | Check formatting without modifying files |
+| `npm test`                 | Run lightweight behavior tests           |
+| `npm run validate:release` | Validate release metadata and assets     |
+| `npm run check`            | Run all standard checks and build        |
 
 ## Using the views
 
@@ -63,3 +64,13 @@ Existing Bases need these view type changes:
 | `base-timeline-view` | `wcc-timeline` |
 
 This development vault and repository samples have been updated. Custom CSS selectors now use the `wcc-` prefix. Quick Add and custom new-note folder overrides are retired; creation uses native Bases defaults. Retired capture profile data is preserved for recovery.
+
+## Releases
+
+Keep `manifest.json`, `package.json`, and the lockfile on the same semantic version (for example `0.2.0`). Add that version and its minimum supported app version to `versions.json`. Run `npm run check` before tagging. The release tag must exactly match the manifest version.
+
+Pushing a version tag runs the release workflow: it checks and builds the tagged source, then uploads `main.js`, `manifest.json`, and `styles.css` to a GitHub release. A tag without these assets is not an installable release. Generated JavaScript stays out of the source tree.
+
+## License
+
+[MIT](LICENSE).

@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { Modal } from 'obsidian';
+import { Modal, Setting } from 'obsidian';
 import { dateKey } from './drag-dates';
 
 /** Resolves once on submit or dismissal; the resolver exists before onOpen. */
@@ -14,7 +14,7 @@ export class DatePromptModal extends Modal {
     super(app);
   }
 
-  open(): Promise<Date | null> {
+  prompt(): Promise<Date | null> {
     return new Promise((resolve) => {
       this.resolvePromise = resolve;
       super.open();
@@ -28,10 +28,10 @@ export class DatePromptModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h3', { text: this.modalTitle });
+    new Setting(contentEl).setName(this.modalTitle).setHeading();
     const input = contentEl.createEl('input', { type: 'date' });
     input.value = dateKey(this.initial);
-    input.style.width = '100%';
+    input.addClass('wcc-date-prompt-input');
     input.focus();
     const submit = () => {
       if (!input.value) return;
@@ -48,7 +48,7 @@ export class DatePromptModal extends Modal {
       }
     };
     const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
-    btnRow.style.marginTop = '12px';
+    btnRow.addClass('wcc-date-prompt-buttons');
     const ok = btnRow.createEl('button', { text: 'OK', cls: 'mod-cta' });
     ok.onclick = submit;
     const cancel = btnRow.createEl('button', { text: 'Cancel' });

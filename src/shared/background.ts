@@ -22,12 +22,15 @@ export function createBackground(
   const raw = config.get('bgImage');
   if (typeof raw !== 'string' || !raw.trim()) return null;
   const layer = parent.createDiv(className);
-  layer.style.backgroundImage = `url(${JSON.stringify(backgroundUrl(app, raw))})`;
+  layer.setCssStyles({ backgroundImage: `url(${JSON.stringify(backgroundUrl(app, raw))})` });
   const fit = config.get('bgFit');
-  layer.style.backgroundSize =
-    fit === 'stretch' ? '100% 100%' : typeof fit === 'string' && fit ? fit : 'cover';
+  layer.setCssStyles({
+    backgroundSize:
+      fit === 'stretch' ? '100% 100%' : typeof fit === 'string' && fit ? fit : 'cover',
+  });
   const blur = config.get('bgBlur');
-  if (typeof blur === 'number' && blur > 0) layer.style.filter = `blur(${blur}px)`;
-  layer.style.opacity = String(config.get('bgOpacity') ?? 0.3);
+  if (typeof blur === 'number' && blur > 0) layer.setCssStyles({ filter: `blur(${blur}px)` });
+  const opacity = config.get('bgOpacity');
+  layer.setCssStyles({ opacity: String(typeof opacity === 'number' ? opacity : 0.3) });
   return layer;
 }

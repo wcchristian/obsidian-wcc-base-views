@@ -29,9 +29,12 @@ class Modal {
     this.onClose();
   }
 }
-const { DatePromptModal } = await loadModule('src/shared/date-prompt.ts', { Modal });
+const { DatePromptModal } = await loadModule('src/shared/date-prompt.ts', {
+  Modal,
+  Setting: class {},
+});
 test('date dialog dismissal resolves even when the host closes during opening', async () => {
   const modal = new DatePromptModal({}, new Date(), 'Choose date');
   modal.onOpen = () => modal.close();
-  assert.equal(await modal.open(), null);
+  assert.equal(await modal.prompt(), null);
 });

@@ -113,10 +113,8 @@ const el = {
   addClass(c) {
     this.classes.push(c);
   },
-  style: {
-    setProperty(k, v) {
-      el.props[k] = v;
-    },
+  setCssProps(props) {
+    Object.assign(this.props, props);
   },
 };
 colorCheckbox(el, config, entry);

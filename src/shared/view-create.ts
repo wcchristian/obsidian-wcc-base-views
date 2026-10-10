@@ -40,6 +40,6 @@ export async function createViewNote(
     });
   } catch (error) {
     console.error(error);
-    new Notice('Failed to create note from this Bases view.');
+    new Notice('Failed to create note from this bases view.');
   }
 }
