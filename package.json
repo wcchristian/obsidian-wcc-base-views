@@ -1,6 +1,6 @@
 {
   "name": "obsidian-wcc-base-views",
-  "version": "0.2.0",
+  "version": "0.2.5",
   "description": "Table, List, Kanban, Calendar, and Timeline views for Bases.",
   "main": "main.js",
   "scripts": {
