@@ -1,5 +1,32 @@
 # Contributing
 
+## Development setup
+
+Use Node.js 22 or later and npm:
+
+```sh
+npm ci
+npm run check
+npm run watch
+```
+
+`check` runs type checking, the official Obsidian review linter with zero warnings allowed, formatting checks, lightweight Node tests, the production build, and release validation. It does not require Obsidian, Playwright, or a browser download.
+
+Install this checkout in a test vault as `.obsidian/plugins/wcc-base-views`, or symlink it there. Enable **WCC Base Views** in Community plugins. After building, reload the plugin or restart Obsidian. Keep experiments in a test vault because property editing writes to notes.
+
+| Command                    | Purpose                                  |
+| -------------------------- | ---------------------------------------- |
+| `npm run dev`              | Build once with a source map             |
+| `npm run watch`            | Rebuild after source changes             |
+| `npm run build`            | Create the production `main.js`          |
+| `npm run typecheck`        | Check strict types and unused code       |
+| `npm run lint`             | Check official review rules              |
+| `npm run format`           | Apply consistent formatting              |
+| `npm run format:check`     | Check formatting without modifying files |
+| `npm test`                 | Run lightweight behavior tests           |
+| `npm run validate:release` | Validate release metadata and assets     |
+| `npm run check`            | Run all standard checks and build        |
+
 ## Make a change
 
 1. Install dependencies with `npm ci`.
@@ -36,3 +63,9 @@ Use sample notes in a disposable vault. For a rendering or interaction change, c
 ## Repository hygiene
 
 Keep the lockfile, source, tests, samples, and documentation tracked. Do not commit dependencies, generated builds, local settings, credentials, or test artifacts. CI runs the same `npm run check` command used locally. Pushing a semantic version tag matching the manifest runs the checked release workflow and publishes the three installable assets.
+
+## Releases
+
+Keep `manifest.json`, `package.json`, and the lockfile on the same semantic version (for example `0.2.0`). Add that version and its minimum supported app version to `versions.json`. Run `npm run check` before tagging. The release tag must exactly match the manifest version.
+
+Pushing a version tag runs the release workflow: it checks and builds the tagged source, then uploads `main.js`, `manifest.json`, and `styles.css` to a GitHub release. A tag without these assets is not an installable release. Generated JavaScript stays out of the source tree.
