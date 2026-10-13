@@ -3562,3 +3562,54 @@ textarea.wcc-table-prop-input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Status controls are shared by every view. */
+button.wcc-status-pill {
+  border-radius: 999px;
+  padding: 2px 9px;
+  height: auto;
+  min-height: 22px;
+  font-size: var(--font-smallest);
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  box-shadow: none;
+}
+button.wcc-collapse-arrow,
+button.wcc-card-details {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.wcc-collapse-arrow svg,
+.wcc-card-details svg {
+  width: 16px;
+  height: 16px;
+}
+.wcc-kanban-column-creator {
+  order: 1;
+  align-self: flex-start;
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+}
+.wcc-list-items[hidden],
+.wcc-calendar-group-items[hidden],
+.wcc-kanban-card-props[hidden],
+.wcc-timeline-row-props[hidden],
+.wcc-table-table tr[hidden] {
+  display: none;
+}
+.wcc-calendar-group-label {
+  display: flex;
+  align-items: center;
+}

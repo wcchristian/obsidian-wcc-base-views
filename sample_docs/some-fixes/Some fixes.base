@@ -1,0 +1,106 @@
+filters:
+  and:
+    - file.inFolder("Some fixes/Tasks")
+views:
+  - type: wcc-kanban
+    name: Kanban
+    order:
+      - file.name
+      - note.status
+      - note.date
+      - note.end
+      - note.notes
+    groupBy:
+      property: note.status
+      direction: ASC
+    newNoteFolder: Some fixes/Tasks
+    completionType: status
+    statusProperty: note.status
+    doneProperty: note.done
+    statusValues:
+      - Waiting
+    sortOrderProperty: note.rank
+    detailsExpanded: false
+    showEmptyColumns: true
+  - type: wcc-list
+    name: List
+    order:
+      - file.name
+      - note.status
+      - note.date
+      - note.end
+      - note.notes
+    groupBy:
+      property: note.status
+      direction: ASC
+    newNoteFolder: Some fixes/Tasks
+    completionType: status
+    statusProperty: note.status
+    doneProperty: note.done
+    statusValues:
+      - Waiting
+    sortOrderProperty: note.rank
+    detailsExpanded: false
+  - type: wcc-table
+    name: Table
+    order:
+      - file.name
+      - note.status
+      - note.date
+      - note.end
+      - note.notes
+    groupBy:
+      property: note.status
+      direction: ASC
+    newNoteFolder: Some fixes/Tasks
+    completionType: status
+    statusProperty: note.status
+    doneProperty: note.done
+    statusValues:
+      - Waiting
+    sortOrderProperty: note.rank
+    detailsExpanded: false
+  - type: wcc-calendar
+    name: Calendar
+    order:
+      - file.name
+      - note.status
+      - note.date
+      - note.end
+      - note.notes
+    groupBy:
+      property: note.status
+      direction: ASC
+    newNoteFolder: Some fixes/Tasks
+    completionType: status
+    statusProperty: note.status
+    doneProperty: note.done
+    statusValues:
+      - Waiting
+    sortOrderProperty: note.rank
+    detailsExpanded: false
+    dateProperty: note.date
+    endDateProperty: note.end
+    viewMode: agenda
+    agendaDays: 7
+  - type: wcc-timeline
+    name: Timeline
+    order:
+      - file.name
+      - note.status
+      - note.date
+      - note.end
+      - note.notes
+    groupBy:
+      property: note.status
+      direction: ASC
+    newNoteFolder: Some fixes/Tasks
+    completionType: status
+    statusProperty: note.status
+    doneProperty: note.done
+    statusValues:
+      - Waiting
+    sortOrderProperty: note.rank
+    detailsExpanded: false
+    dateProperty: note.date
+    endDateProperty: note.end

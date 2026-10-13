@@ -1,3 +1,4 @@
+import { checkboxProperty, renderStatus, viewGroups, groupArrow } from '../../shared/status';
 import { setIcon } from 'obsidian';
 import { CardDetails } from '../../shared/card-details';
 import type { ListItem } from './model';
@@ -67,7 +68,7 @@ export class BaseListView extends BasesView implements HoverParent {
     this.pointerDrag = new PointerDrag(this.wrap, {
       items: '.wcc-list-row',
       wholeItem: '.wcc-list-row:not(.wcc-table-row)',
-      ignore: 'a:not(.wcc-list-row-link), button, input, textarea, .wcc-list-row-props',
+      ignore: 'a:not(.wcc-list-row-link), button, input, textarea, select, .wcc-list-row-props',
       onStart: (row) => {
         this.dragId = row.dataset.itemId!;
         this.dragGroupKey =
@@ -97,8 +98,7 @@ export class BaseListView extends BasesView implements HoverParent {
     if (this.dragging) return;
     applyViewDensity(this.wrap, this.config);
     const restoreScroll = rememberScroll(this.wrap, []);
-    const done = viewProperty(this.config, 'doneProperty');
-    this.doneProp = done && parsePropertyId(done).type === 'note' ? done : null;
+    this.doneProp = checkboxProperty(this.config);
     const order = viewProperty(this.config, 'sortOrderProperty');
     this.sortOrderProp = order && parsePropertyId(order).type === 'note' ? order : null;
     this.wrap.empty();
@@ -139,7 +139,7 @@ export class BaseListView extends BasesView implements HoverParent {
   // ── build ────────────────────────────────────────────────────────────────
 
   protected buildList() {
-    const groups = this.data.groupedData;
+    const groups = viewGroups(this);
     const isGrouped =
       groups && groups.length > 0 && groups.some((g) => g.hasKey() && g.key != null);
 
@@ -162,6 +162,7 @@ export class BaseListView extends BasesView implements HoverParent {
       const section = this.wrap.createDiv('wcc-list-group');
 
       const header = section.createDiv('wcc-list-group-header');
+      const collapsed = groupArrow(this, header, groupKey);
       const label = header.createDiv('wcc-list-group-label');
       label.textContent = groupKey === NULL_KEY ? '—' : groupKey;
       label.title = groupKey === NULL_KEY ? '—' : groupKey;
@@ -181,6 +182,7 @@ export class BaseListView extends BasesView implements HoverParent {
       };
 
       const listEl = section.createDiv('wcc-list-items');
+      listEl.hidden = collapsed;
       const items = this.collectItems([...group.entries]);
       items.forEach((item) => this.makeRow(listEl, item, groupKey));
       listEl.dataset.listGroup = groupKey;
@@ -310,7 +312,7 @@ export class BaseListView extends BasesView implements HoverParent {
   protected renderTitle(titleRow: HTMLElement, item: ListItem, row: HTMLElement) {
     dragGrip(titleRow, `Drag ${item.title} to reorder or move between groups`);
 
-    if (this.doneProp) {
+    if (!renderStatus(this, titleRow, item) && this.doneProp) {
       const cb = titleRow.createEl('button', {
         cls: 'wcc-list-check' + (item.done ? ' wcc-list-check-on' : ''),
         attr: {

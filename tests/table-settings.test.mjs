@@ -47,6 +47,10 @@ const options = table.options().flatMap((group) => group.items ?? [group]);
 assert.deepEqual(
   options.map((option) => option.key),
   [
+    'completionType',
+    'doneProperty',
+    'statusProperty',
+    'statusValues',
     'sortOrderProperty',
     'itemPadding',
     'colorProperty',
@@ -58,7 +62,7 @@ assert.deepEqual(
     'bgBlur',
     'bgOpacity',
   ],
-  'Table retains shared appearance and creation settings, without Table config or Properties',
+  'Table retains shared appearance and creation settings, with completion settings and without Table config',
 );
 assert.ok(!table.options().some((option) => option.displayName === 'Table config'));
 assert.deepEqual(

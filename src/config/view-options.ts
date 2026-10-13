@@ -3,6 +3,32 @@ import { propertyOption } from '../shared/view-properties';
 import { itemPaddingOption } from '../shared/view-spacing';
 import { densityOptions } from '../shared/view-density';
 
+function completionOptions(): BasesAllOptions[] {
+  return [
+    {
+      type: 'group',
+      displayName: 'Completion',
+      items: [
+        {
+          type: 'dropdown',
+          displayName: 'Completion type',
+          key: 'completionType',
+          default: 'checkbox',
+          options: { checkbox: 'Checkbox', status: 'Status' },
+        },
+        { ...propertyOption('Done field (checkbox)', 'doneProperty'), default: 'done' },
+        { ...propertyOption('Status field', 'statusProperty'), default: 'status' },
+        {
+          type: 'multitext',
+          displayName: 'Show these statuses (including empty groups)',
+          key: 'statusValues',
+          default: [],
+        },
+      ],
+    },
+  ];
+}
+
 /** Fresh option objects keep view configuration independent. */
 function appearanceOptions(density = false): BasesAllOptions[] {
   return [
@@ -79,13 +105,13 @@ function appearanceOptions(density = false): BasesAllOptions[] {
 
 export function calendarOptions(): BasesAllOptions[] {
   return [
+    ...completionOptions(),
     {
       type: 'group',
       displayName: 'Properties',
       items: [
         propertyOption('Date property', 'dateProperty'),
         propertyOption('End date property', 'endDateProperty'),
-        propertyOption('Done property', 'doneProperty'),
         propertyOption('Sort order property', 'sortOrderProperty'),
       ],
     },
@@ -147,6 +173,7 @@ export function calendarOptions(): BasesAllOptions[] {
 
 export function kanbanOptions(): BasesAllOptions[] {
   return [
+    ...completionOptions(),
     {
       type: 'group',
       displayName: 'Properties',
@@ -154,7 +181,6 @@ export function kanbanOptions(): BasesAllOptions[] {
         propertyOption('Sub-group by', 'subgroupProperty'),
         propertyOption('Sort order property', 'sortOrderProperty'),
         propertyOption('Card title property', 'cardTitleProperty'),
-        propertyOption('Done property', 'doneProperty'),
         propertyOption('Cover image property', 'coverImageProperty'),
       ],
     },
@@ -244,13 +270,13 @@ export function kanbanOptions(): BasesAllOptions[] {
 
 export function timelineOptions(): BasesAllOptions[] {
   return [
+    ...completionOptions(),
     {
       type: 'group',
       displayName: 'Properties',
       items: [
         propertyOption('Start date', 'dateProperty'),
         propertyOption('End date', 'endDateProperty'),
-        propertyOption('Done', 'doneProperty'),
         propertyOption('Subtitle', 'subtitleProperty'),
         propertyOption('Sort order property', 'sortOrderProperty'),
       ],
@@ -331,13 +357,11 @@ export function timelineOptions(): BasesAllOptions[] {
 
 export function listOptions(): BasesAllOptions[] {
   return [
+    ...completionOptions(),
     {
       type: 'group',
       displayName: 'Properties',
-      items: [
-        propertyOption('Done property', 'doneProperty'),
-        propertyOption('Sort order property', 'sortOrderProperty'),
-      ],
+      items: [propertyOption('Sort order property', 'sortOrderProperty')],
     },
     ...appearanceOptions(true),
   ];
@@ -345,6 +369,7 @@ export function listOptions(): BasesAllOptions[] {
 
 export function tableOptions(): BasesAllOptions[] {
   return [
+    ...completionOptions(),
     {
       type: 'group',
       displayName: 'Properties',

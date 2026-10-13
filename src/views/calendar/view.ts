@@ -1,3 +1,12 @@
+import {
+  checkboxProperty,
+  renderStatus,
+  viewGroups,
+  groupArrow,
+  statusChoices,
+  statusProperty,
+  groupProperty,
+} from '../../shared/status';
 import { setIcon } from 'obsidian';
 import { CardDetails } from '../../shared/card-details';
 import { distributeEvents, sortSegments, assignLanes } from './layout';
@@ -160,8 +169,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
 
     this.dateProp = viewProperty(this.config, 'dateProperty') ?? null;
     this.endProp = viewProperty(this.config, 'endDateProperty') ?? null;
-    const done = viewProperty(this.config, 'doneProperty');
-    this.doneProp = done && parsePropertyId(done).type === 'note' ? done : null;
+    this.doneProp = checkboxProperty(this.config);
     this.propOrder = this.config.getOrder();
 
     const cfgMode = this.config.get('viewMode');
@@ -527,7 +535,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     day.evList = this.mobilePanel.createDiv('wcc-calendar-compact-events');
     if (!day.events.length)
       day.evList.createDiv({ cls: 'wcc-calendar-compact-empty', text: 'No events for this day' });
-    else this.renderDayChips(day.evList, day.events);
+    this.renderDayChips(day.evList, day.events);
   }
 
   private placeCompactEvents() {
@@ -959,12 +967,21 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       }
       byKey.get(k)!.push(ev);
     }
+    if (statusProperty(this.config) && groupProperty(this.config) === statusProperty(this.config)) {
+      for (const k of statusChoices(this))
+        if (!byKey.has(k)) {
+          byKey.set(k, []);
+          order.push(k);
+        }
+    }
     for (const k of order) {
       const section = parent.createDiv('wcc-calendar-group');
       const label = section.createDiv('wcc-calendar-group-label');
-      label.textContent = k || '—';
+      const collapsed = groupArrow(this, label, k);
+      label.createSpan({ text: k || '—' });
       label.title = k || '—';
       const items = section.createDiv('wcc-calendar-group-items');
+      items.hidden = collapsed;
       for (const ev of byKey.get(k)!) {
         this.makeChip(items, ev);
       }
@@ -1002,7 +1019,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
       if (seg.isStart) bar.setCssStyles({ borderLeft: `3px solid ${color}` });
     }
 
-    if (this.doneProp) {
+    if (!renderStatus(this, bar, seg.ev) && this.doneProp) {
       const cb = bar.createEl('button', {
         cls: 'wcc-calendar-md-check' + (seg.ev.done ? ' wcc-calendar-md-check-on' : ''),
         attr: {
@@ -1077,7 +1094,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     const titleRow = chip.createDiv('wcc-calendar-chip-title');
     dragGrip(titleRow, `Drag ${ev.title} to move or reorder`);
 
-    if (this.doneProp) {
+    if (!renderStatus(this, titleRow, ev) && this.doneProp) {
       const cb = titleRow.createEl('button', {
         cls: 'wcc-calendar-check' + (ev.done ? ' wcc-calendar-check-on' : ''),
         attr: {
@@ -1528,7 +1545,8 @@ export class BaseCalendarView extends BasesView implements HoverParent {
   }
 
   private loadData() {
-    const groups = this.data.groupedData;
+    const groups = viewGroups(this);
+    this.events = [];
     if (!groups?.length) return;
 
     this.grouped = groups.some((g) => g.hasKey());

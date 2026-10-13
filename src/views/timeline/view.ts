@@ -1,3 +1,14 @@
+import { CardDetails } from '../../shared/card-details';
+import {
+  checkboxProperty,
+  renderStatus,
+  viewGroups,
+  groupArrow,
+  statusChoices,
+  statusProperty,
+  groupProperty,
+  isCollapsed,
+} from '../../shared/status';
 import { setIcon } from 'obsidian';
 import type { ZoomLevel, TimelineItem } from './model';
 import { createBackground } from '../../shared/background';
@@ -56,6 +67,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
   private dateProp: BasesPropertyId | null = null;
   private endProp: BasesPropertyId | null = null;
+  private cardDetails = new CardDetails();
   private doneProp: BasesPropertyId | null = null;
   private subtitleProp: BasesPropertyId | null = null;
   private sortOrderProp: BasesPropertyId | null = null;
@@ -148,8 +160,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     const restoreScroll = rememberScroll(this.wrap, ['.wcc-timeline-scroll']);
     this.dateProp = viewProperty(this.config, 'dateProperty') ?? null;
     this.endProp = viewProperty(this.config, 'endDateProperty') ?? null;
-    const done = viewProperty(this.config, 'doneProperty');
-    this.doneProp = done && parsePropertyId(done).type === 'note' ? done : null;
+    this.doneProp = checkboxProperty(this.config);
     this.subtitleProp = viewProperty(this.config, 'subtitleProperty') ?? null;
     this.sortOrderProp = viewProperty(this.config, 'sortOrderProperty') ?? null;
 
@@ -275,7 +286,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
   private loadItems() {
     this.items = [];
-    const groups = this.data.groupedData;
+    const groups = viewGroups(this);
     if (!groups?.length || !this.dateProp) return;
 
     for (const group of groups) {
@@ -516,7 +527,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     this.rowYMap.clear();
     this.rowHeightMap.clear();
 
-    const isGrouped = this.items.some((i) => i.groupKey);
+    const isGrouped = viewGroups(this).some((g) => g.hasKey());
 
     const sortItems = (arr: TimelineItem[]) =>
       this.sortOrderProp ? [...arr].sort((a, b) => a.sortOrder - b.sortOrder) : arr;
@@ -532,8 +543,19 @@ export class BaseTimelineView extends BasesView implements HoverParent {
         }
         byGroup.get(k)!.push(item);
       }
+      if (
+        statusProperty(this.config) &&
+        groupProperty(this.config) === statusProperty(this.config)
+      ) {
+        for (const k of statusChoices(this))
+          if (!byGroup.has(k)) {
+            byGroup.set(k, []);
+            order.push(k);
+          }
+      }
       for (const k of order) {
         rowY = this.renderSwimlaneHeader(content, k, rowY, totalWidth);
+        if (isCollapsed(this.config, k)) continue;
         for (const item of sortItems(byGroup.get(k)!)) {
           rowY = this.renderItemRow(content, item, rowY, cw, colCount);
         }
@@ -795,6 +817,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
     _totalWidth: number,
   ): number {
     const hdr = content.createDiv('wcc-timeline-swimlane-hdr');
+    groupArrow(this, hdr, label);
     hdr.createSpan({ cls: 'wcc-timeline-swimlane-label', text: label || '(no value)' });
     hdr.setCssStyles({ top: `${rowY}px` });
     hdr.setCssStyles({ width: '100%' });
@@ -872,6 +895,8 @@ export class BaseTimelineView extends BasesView implements HoverParent {
       });
       this.renderPropVal(field, value ?? new NullValue(), item, pid);
     }
+
+    this.cardDetails.render(label, row, props, item.title, item.id, 'wcc-timeline', this.config);
 
     // Track cells (one per column, for grid lines and shading)
     const track = row.createDiv('wcc-timeline-row-track');
@@ -993,44 +1018,46 @@ export class BaseTimelineView extends BasesView implements HoverParent {
       handleL.setAttribute('aria-label', 'Drag to resize start date');
       handleL.title = 'Drag to resize start date';
       // Completion button keeps its state until the save succeeds.
-      if (this.doneProp) {
+      {
         const completionHost = this.mobileLayout
           ? (Array.from(this.wrap.querySelectorAll<HTMLElement>('.wcc-timeline-row-label')).find(
               (label) => label.dataset.itemId === item.id,
             ) ?? bar)
           : bar;
-        const cb = completionHost.createEl('button', {
-          cls: 'wcc-timeline-bar-check' + (item.done ? ' wcc-timeline-bar-check-on' : ''),
-          attr: {
-            type: 'button',
-            role: 'checkbox',
-            'aria-checked': String(item.done),
-            'aria-label': `Mark ${item.title} ${item.done ? 'incomplete' : 'complete'}`,
-          },
-        });
-        colorCheckbox(cb, this.config, item.entry);
-        cb.onclick = async (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          cb.disabled = true;
-          try {
-            const value = !item.done;
-            await writeProp(this.app, item.file, this.doneProp!, value);
-            item.done = value;
-            bar.toggleClass('wcc-timeline-bar-done', value);
-            cb.toggleClass('wcc-timeline-bar-check-on', value);
-            cb.setAttribute('aria-checked', String(value));
-            cb.setAttribute(
-              'aria-label',
-              `Mark ${item.title} ${value ? 'incomplete' : 'complete'}`,
-            );
-          } catch (error) {
-            console.error(error);
-            new Notice('Failed to update completion');
-          } finally {
-            cb.disabled = false;
-          }
-        };
+        if (!renderStatus(this, completionHost, item) && this.doneProp) {
+          const cb = completionHost.createEl('button', {
+            cls: 'wcc-timeline-bar-check' + (item.done ? ' wcc-timeline-bar-check-on' : ''),
+            attr: {
+              type: 'button',
+              role: 'checkbox',
+              'aria-checked': String(item.done),
+              'aria-label': `Mark ${item.title} ${item.done ? 'incomplete' : 'complete'}`,
+            },
+          });
+          colorCheckbox(cb, this.config, item.entry);
+          cb.onclick = async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            cb.disabled = true;
+            try {
+              const value = !item.done;
+              await writeProp(this.app, item.file, this.doneProp!, value);
+              item.done = value;
+              bar.toggleClass('wcc-timeline-bar-done', value);
+              cb.toggleClass('wcc-timeline-bar-check-on', value);
+              cb.setAttribute('aria-checked', String(value));
+              cb.setAttribute(
+                'aria-label',
+                `Mark ${item.title} ${value ? 'incomplete' : 'complete'}`,
+              );
+            } catch (error) {
+              console.error(error);
+              new Notice('Failed to update completion');
+            } finally {
+              cb.disabled = false;
+            }
+          };
+        }
       }
 
       // Label

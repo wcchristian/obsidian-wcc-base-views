@@ -1,4 +1,14 @@
-import type { App, BasesViewConfig, TFile, HoverParent, BasesPropertyId, Value } from 'obsidian';
+import { renderStatus, statusProperty } from './status';
+import { viewProperty } from './view-properties';
+import type {
+  App,
+  BasesViewConfig,
+  BasesView,
+  TFile,
+  HoverParent,
+  BasesPropertyId,
+  Value,
+} from 'obsidian';
 import {
   Keymap,
   parsePropertyId,
@@ -16,7 +26,7 @@ import { writeProp } from './frontmatter';
 import { parseListEdit, propertyLinks } from './list-properties';
 import { isCompact } from './view-density';
 
-interface PropertyHost extends HoverParent {
+interface PropertyHost extends HoverParent, Pick<BasesView, 'data' | 'onDataUpdated'> {
   app: App;
   config: BasesViewConfig;
 }
@@ -34,7 +44,20 @@ export class PropertyFieldRenderer {
     return this.host.config;
   }
 
-  render(parent: HTMLElement, val: Value, item: { file: TFile }, pid: BasesPropertyId) {
+  render(
+    parent: HTMLElement,
+    val: Value,
+    item: { file: TFile; entry?: import('obsidian').BasesEntry },
+    pid: BasesPropertyId,
+  ) {
+    const statusPid = statusProperty(this.config);
+    if (
+      statusPid &&
+      (pid === statusPid || pid === (viewProperty(this.config, 'doneProperty') ?? 'note.done'))
+    ) {
+      renderStatus(this.host, parent, item);
+      return;
+    }
     const editable = parsePropertyId(pid).type === 'note';
     const empty = val instanceof NullValue;
     const valueEl = parent.createDiv(`${this.prefix}-prop-value`);
