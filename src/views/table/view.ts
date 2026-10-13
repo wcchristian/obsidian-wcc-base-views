@@ -17,6 +17,8 @@ export class BaseTableView extends BaseListView {
   private table: HTMLTableElement | null = null;
   private columnEls = new Map<BasesPropertyId, HTMLTableColElement>();
   private widths = new Map<BasesPropertyId, number>();
+  private minColumnWidth = 40;
+  private maxAutomaticWidth = 300;
   private columnDrag: PointerDrag;
   private columnDrop: DropIndicator;
   private draggedColumn: BasesPropertyId | null = null;
@@ -74,6 +76,13 @@ export class BaseTableView extends BaseListView {
     }
     this.columnEls.clear();
     this.widths.clear();
+    const style = this.wrap.ownerDocument.defaultView!.getComputedStyle(this.wrap);
+    this.minColumnWidth =
+      parseFloat(style.getPropertyValue('--bases-table-column-min-width')) || 40;
+    this.maxAutomaticWidth = Math.max(
+      this.minColumnWidth,
+      parseFloat(style.getPropertyValue('--bases-table-column-max-width')) || 300,
+    );
     this.table = this.wrap.createEl('table', { cls: 'wcc-table-table' });
     const cols = this.table.createEl('colgroup');
     const head = this.table.createEl('thead').createEl('tr');
@@ -85,15 +94,11 @@ export class BaseTableView extends BaseListView {
     for (const pid of this.columns) {
       const col = cols.createEl('col');
       this.columnEls.set(pid, col);
-      const compact =
-        this.wrap.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches &&
-        this.wrap.clientWidth < 700;
-      const fallback = pid === 'file.name' ? (compact ? 140 : 260) : 200;
-      const value = widths[pid] ?? fallback;
+      const value = widths[pid];
       this.widths.set(
         pid,
-        typeof value === 'number' && Number.isFinite(value)
-          ? Math.max(100, Math.min(700, value))
+        typeof value === 'number' && Number.isFinite(value) && value > 0
+          ? Math.max(this.minColumnWidth, value)
           : 200,
       );
       const th = head.createEl('th', {
@@ -140,7 +145,6 @@ export class BaseTableView extends BaseListView {
       });
       this.makeColumnResize(th, pid);
     }
-    this.applyWidths();
     const groups = this.data.groupedData ?? [];
     const grouped = groups.some((group) => group.hasKey() && group.key != null);
     if (!grouped) {
@@ -169,6 +173,40 @@ export class BaseTableView extends BaseListView {
         this.makeAddRow(body, key);
       }
     }
+    this.measureColumnWidths(widths);
+    this.applyWidths();
+  }
+
+  private measureColumnWidths(saved: Record<string, unknown>) {
+    if (!this.table) return;
+    // Measure an unconstrained copy so wrapping and pane width cannot distort the result.
+    const measure = this.table.cloneNode(true) as HTMLTableElement;
+    measure.addClass('wcc-table-measure');
+    measure.querySelector('colgroup')?.remove();
+    measure
+      .querySelectorAll('.wcc-table-group-row, .wcc-table-add-row, .wcc-table-empty')
+      .forEach((row) => row.remove());
+    this.wrap.appendChild(measure);
+    const headers = measure.querySelectorAll<HTMLTableCellElement>('thead th');
+    this.columns.forEach((pid, index) => {
+      const natural = headers[index]?.getBoundingClientRect().width ?? this.minColumnWidth;
+      const automatic = Math.max(
+        this.minColumnWidth,
+        Math.min(this.maxAutomaticWidth, Math.ceil(natural)),
+      );
+      const custom = saved[pid];
+      this.widths.set(
+        pid,
+        typeof custom === 'number' && Number.isFinite(custom) && custom > 0
+          ? Math.max(this.minColumnWidth, custom)
+          : automatic,
+      );
+    });
+    measure.remove();
+    this.table.querySelectorAll<HTMLElement>('.wcc-table-column-resize').forEach((handle) => {
+      const pid = handle.parentElement!.dataset.propertyId as BasesPropertyId;
+      handle.setAttribute('aria-valuenow', String(this.widths.get(pid)));
+    });
   }
 
   private makeTableRow(body: HTMLElement, item: ListItem) {
@@ -299,12 +337,11 @@ export class BaseTableView extends BaseListView {
         tabindex: '0',
         'aria-orientation': 'vertical',
         'aria-label': `Resize ${pid === 'file.name' ? 'Name' : this.config.getDisplayName(pid)} column`,
-        'aria-valuemin': '100',
-        'aria-valuemax': '700',
+        'aria-valuemin': String(this.minColumnWidth),
       },
     });
     const update = (width: number) => {
-      this.widths.set(pid, Math.max(100, Math.min(700, Math.round(width))));
+      this.widths.set(pid, Math.max(this.minColumnWidth, Math.round(width)));
       this.applyWidths();
       handle.setAttribute('aria-valuenow', String(this.widths.get(pid)));
     };
@@ -312,34 +349,58 @@ export class BaseTableView extends BaseListView {
       const old = this.config.get('columnWidths');
       this.config.set('columnWidths', {
         ...(old && typeof old === 'object' && !Array.isArray(old) ? old : {}),
-        ...Object.fromEntries(this.widths),
+        [pid]: this.widths.get(pid),
       });
     };
     handle.setAttribute('aria-valuenow', String(this.widths.get(pid)));
-    let active: { id: number; x: number; width: number } | null = null;
+    let active: { id: number; x: number; width: number; moved: boolean } | null = null;
     handle.onpointerdown = (event) => {
       if (event.button !== 0 || active) return;
       event.preventDefault();
       event.stopPropagation();
-      active = { id: event.pointerId, x: event.clientX, width: this.widths.get(pid)! };
+      this.dragging = true;
+      active = {
+        id: event.pointerId,
+        x: event.clientX,
+        width: header.getBoundingClientRect().width,
+        moved: false,
+      };
       handle.setPointerCapture(event.pointerId);
       handle.addClass('wcc-table-column-resizing');
     };
     handle.onpointermove = (event) => {
-      if (active && event.pointerId === active.id) update(active.width + event.clientX - active.x);
+      if (active && event.pointerId === active.id) {
+        active.moved ||= event.clientX !== active.x;
+        update(active.width + event.clientX - active.x);
+      }
     };
     const finish = (event: PointerEvent, cancel: boolean) => {
       if (!active || event.pointerId !== active.id) return;
-      const old = active.width;
+      const { width: old, moved } = active;
       active = null;
-      if (cancel) update(old);
-      else save();
+      if (moved) {
+        if (cancel) update(old);
+        else save();
+      }
       handle.removeClass('wcc-table-column-resizing');
       if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      this.dragging = false;
+      // Leave a stationary divider in place so the second click can reset its width.
+      if (moved) this.onDataUpdated();
     };
     handle.onpointerup = (event) => finish(event, false);
     handle.onpointercancel = (event) => finish(event, true);
     handle.onlostpointercapture = (event) => finish(event, true);
+    handle.ondblclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const old = this.config.get('columnWidths');
+      const saved: Record<string, unknown> =
+        old && typeof old === 'object' && !Array.isArray(old) ? { ...old } : {};
+      delete saved[pid];
+      this.config.set('columnWidths', saved);
+      this.onDataUpdated();
+    };
     handle.oncontextmenu = (event) => {
       event.preventDefault();
       event.stopPropagation();

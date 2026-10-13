@@ -2960,7 +2960,7 @@ button.wcc-timeline-bar-check:focus-visible {
   overflow: auto;
 }
 .wcc-table-table {
-  min-width: 100%;
+  min-width: 0;
   position: relative;
   z-index: 1;
   table-layout: fixed;
@@ -3532,4 +3532,33 @@ textarea.wcc-table-prop-input {
 }
 .wcc-date-prompt-buttons {
   margin-top: 12px;
+}
+
+/* Natural column measurement must not inherit the live table's fixed layout. */
+.wcc-table-table.wcc-table-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  width: max-content;
+  table-layout: auto;
+}
+.wcc-table-measure th,
+.wcc-table-measure td {
+  position: static;
+}
+.wcc-table-measure .wcc-list-row-link,
+.wcc-table-measure .wcc-table-prop-value,
+.wcc-table-measure .wcc-table-header-label {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.wcc-table-header-label {
+  min-width: 0;
+  overflow: hidden;
+}
+.wcc-table-header-label > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
