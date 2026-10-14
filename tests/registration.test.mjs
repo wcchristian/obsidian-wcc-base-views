@@ -58,13 +58,13 @@ test('shared appearance option objects are independent across calls and views', 
   await plugin.onload();
   const first = plugin.views[0].options();
   first
-    .find((group) => group.displayName === 'Spacing')
+    .find((group) => group.displayName === 'Advanced')
     .items.find((option) => option.key === 'itemPadding').default = 99;
   for (const view of plugin.views) {
     assert.equal(
       view
         .options()
-        .find((group) => group.displayName === 'Spacing')
+        .find((group) => group.displayName === 'Advanced')
         .items.find((option) => option.key === 'itemPadding').default,
       6,
     );

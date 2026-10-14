@@ -1,3 +1,4 @@
+import { viewHelp } from '../../shared/view-help';
 import { checkboxProperty, renderStatus, viewGroups, groupArrow } from '../../shared/status';
 import { setIcon } from 'obsidian';
 import { CardDetails } from '../../shared/card-details';
@@ -102,6 +103,8 @@ export class BaseListView extends BasesView implements HoverParent {
     const order = viewProperty(this.config, 'sortOrderProperty');
     this.sortOrderProp = order && parsePropertyId(order).type === 'note' ? order : null;
     this.wrap.empty();
+    const toolbar = this.wrap.createDiv('wcc-view-tools');
+    viewHelp(this.app, toolbar, this.type === 'wcc-table' ? 'table' : 'list');
     this.buildBackground();
     this.buildList();
     restoreScroll();

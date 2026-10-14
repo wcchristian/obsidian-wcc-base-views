@@ -3667,3 +3667,33 @@ button.wcc-kanban-add-column::before {
   content: '+';
   margin-right: 6px;
 }
+
+.wcc-view-tools {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+button.wcc-view-help {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+button.wcc-view-help:hover,
+button.wcc-view-help:focus-visible {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+.wcc-timeline-toolbar > .wcc-view-help {
+  order: 1;
+  margin-left: auto;
+}

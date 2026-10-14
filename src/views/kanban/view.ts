@@ -1,3 +1,4 @@
+import { viewHelp } from '../../shared/view-help';
 import { CardDetails } from '../../shared/card-details';
 import {
   checkboxProperty,
@@ -115,6 +116,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     this.colorMap = this.parseColorMap();
     this.dragCards = [];
     this.wrap.empty();
+    this.renderViewTools();
     this.buildBoard();
     restoreScroll();
   }
@@ -124,6 +126,45 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     this.clearKanbanDrop();
     this.dropIndicator.destroy();
     super.onunload();
+  }
+
+  private renderViewTools() {
+    const toolbar = this.wrap.createDiv('wcc-view-tools');
+    const columns = this.getHiddenColumns();
+    const subgroups = this.getHiddenSubgroups();
+    if (columns.length || subgroups.length) {
+      const restore = toolbar.createEl('button', {
+        text: 'Manage hidden groups',
+        attr: { type: 'button' },
+      });
+      restore.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const menu = new Menu();
+        const addRestore = (key: string, values: string[], value: string, label: string) =>
+          menu.addItem((item) =>
+            item.setTitle(`Show ${label}: ${value}`).onClick(() => {
+              this.config.set(
+                key,
+                values.filter((v) => v !== value),
+              );
+              this.onDataUpdated();
+            }),
+          );
+        for (const value of columns) addRestore('hiddenColumns', columns, value, 'column');
+        for (const value of subgroups) addRestore('hiddenSubgroups', subgroups, value, 'swimlane');
+        menu.addSeparator();
+        menu.addItem((item) =>
+          item.setTitle('Show all hidden groups').onClick(() => {
+            this.config.set('hiddenColumns', []);
+            this.config.set('hiddenSubgroups', []);
+            this.onDataUpdated();
+          }),
+        );
+        menu.showAtMouseEvent(event);
+      };
+    }
+    viewHelp(this.app, toolbar, 'kanban');
   }
 
   // ── config helpers ──────────────────────────────────────────────────────

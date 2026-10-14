@@ -1,4 +1,4 @@
-import type { BasesAllOptions, BasesView, QueryController } from 'obsidian';
+import type { BasesAllOptions, BasesView, BasesViewConfig, QueryController } from 'obsidian';
 import type BaseViewsPlugin from '../main';
 import { BaseCalendarView, VIEW_TYPE_BASE_CALENDAR } from '../views/calendar/view';
 import { BaseKanbanView, VIEW_TYPE_BASE_KANBAN } from '../views/kanban/view';
@@ -21,7 +21,7 @@ export interface ViewDefinition {
   setting: ViewSettingKey;
   description: string;
   create(controller: QueryController, container: HTMLElement, plugin: BaseViewsPlugin): BasesView;
-  options(): BasesAllOptions[];
+  options(config?: BasesViewConfig): BasesAllOptions[];
 }
 
 /** Registration and settings use the same metadata so names cannot drift. */

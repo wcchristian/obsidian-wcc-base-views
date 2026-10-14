@@ -1,3 +1,4 @@
+import { viewHelp } from '../../shared/view-help';
 import { checkboxProperty, renderStatus, viewGroups, statusProperty } from '../../shared/status';
 import { setIcon } from 'obsidian';
 import { CardDetails } from '../../shared/card-details';
@@ -220,16 +221,23 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     const mWeek = modeGroup.createEl('button', { text: 'Week', cls: 'wcc-calendar-mode' });
     const mAgenda = modeGroup.createEl('button', { text: 'Agenda', cls: 'wcc-calendar-mode' });
     this.modeButtons = { month: mMonth, week: mWeek, agenda: mAgenda };
+    viewHelp(this.app, hdr, 'calendar');
     mMonth.onclick = () => {
       this.viewMode = 'month';
+      this.configuredViewMode = 'month';
+      this.config.set('viewMode', 'month');
       this.render();
     };
     mWeek.onclick = () => {
       this.viewMode = 'week';
+      this.configuredViewMode = 'week';
+      this.config.set('viewMode', 'week');
       this.render();
     };
     mAgenda.onclick = () => {
       this.viewMode = 'agenda';
+      this.configuredViewMode = 'agenda';
+      this.config.set('viewMode', 'agenda');
       this.render();
     };
 

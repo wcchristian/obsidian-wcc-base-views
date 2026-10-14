@@ -5,8 +5,19 @@ import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.WCC_PLAYWRIGHT_MODULE || 'playwright');
 const reference = await readFile('tests/browser/drag.browser.test.mjs', 'utf8');
-const mock = reference.match(/const mock = `([\s\S]*?)`;/)[1];
-const polyfill = reference.match(/const polyfill = `([\s\S]*?)`;/)[1];
+const mock = reference
+  .match(/const mock = `([\s\S]*?)`;/)[1]
+  .replace(
+    'export class Modal {}',
+    `export class Modal {constructor(){this.root=document.body.createDiv('modal');this.titleEl=this.root.createEl('h2');this.contentEl=this.root.createDiv();}open(){this.onOpen();}close(){this.root.remove();}}`,
+  )
+  .replace(
+    'export class Menu { showAtMouseEvent(){} }',
+    `export class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(v){this.title=v;return this;},setChecked(){return this;},onClick(fn){this.action=fn;return this;}};fn(item);this.items.push(item);return this;}addSeparator(){}showAtMouseEvent(){const root=document.body.createDiv('test-menu');for(const item of this.items){root.createEl('button',{text:item.title}).onclick=()=>{root.remove();item.action();};}}}`,
+  );
+const polyfill =
+  reference.match(/const polyfill = `([\s\S]*?)`;/)[1] +
+  `HTMLElement.prototype.setText=function(value){this.textContent=value;};`;
 const fixture = `
 import {BaseCalendarView} from './src/views/calendar/view';
 import {BaseKanbanView} from './src/views/kanban/view';
@@ -25,6 +36,7 @@ const plugin={settings:{localOrder:{}},saveSettings(){}};
 window.setupStatus=type=>{window.current?.onunload();document.querySelector('#fixture').empty();values.viewMode=type==='kanban'?'month':type;const View=type==='kanban'?BaseKanbanView:BaseCalendarView;const instance=new View({app},document.querySelector('#fixture'),plugin);instance.config=config;instance.data=data();if(type!=='kanban')instance.curDate=new Date(2026,9,13);window.current=instance;instance.onDataUpdated();};
 window.moveLastStatusTask=()=>{notes.find(n=>n.status==='Investigating').status='Working';window.current.data=data();window.current.onDataUpdated();};
 window.setStatusType=type=>{values.status_type=type;window.current.data=data();window.current.onDataUpdated();};
+window.hideTestGroups=()=>{values.hiddenColumns=['Waiting'];values.hiddenSubgroups=['External'];window.current.onDataUpdated();};
 window.getViewValues=()=>values;
 `;
 const bundled = await build({
@@ -111,6 +123,14 @@ try {
     await page.locator('[role="checkbox"], [role="switch"], .wcc-status-pill').count(),
     0,
   );
+  await page.evaluate(() => window.hideTestGroups());
+  assert.equal(await page.locator('[data-col-key="Waiting"]').count(), 0);
+  await page.getByRole('button', { name: 'Manage hidden groups' }).click();
+  await page.getByRole('button', { name: 'Show column: Waiting', exact: true }).click();
+  assert.equal(await page.locator('[data-col-key="Waiting"]').count(), 1);
+  await page.getByRole('button', { name: 'Manage hidden groups' }).click();
+  await page.getByRole('button', { name: 'Show all hidden groups', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Manage hidden groups' }).count(), 0);
   assert.deepEqual(errors, []);
   console.log(
     'Actual calendar layouts, status_type switching, Kanban controls, retained empty columns, and Add column passed in browser.',

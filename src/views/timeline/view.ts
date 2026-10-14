@@ -1,3 +1,4 @@
+import { viewHelp } from '../../shared/view-help';
 import { CardDetails } from '../../shared/card-details';
 import {
   checkboxProperty,
@@ -215,6 +216,7 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
   private renderToolbar(container: HTMLElement) {
     const toolbar = container.createDiv('wcc-timeline-toolbar');
+    viewHelp(this.app, toolbar, 'timeline');
 
     const nav = toolbar.createDiv('wcc-timeline-nav');
     const prev = nav.createEl('button', {
@@ -251,6 +253,8 @@ export class BaseTimelineView extends BasesView implements HoverParent {
 
     const setZoom = (z: ZoomLevel) => {
       this.zoomLevel = z;
+      this.configuredZoom = z;
+      this.config.set('zoomLevel', z);
       this.windowStart = null;
       this.windowEnd = null;
       this.wrap.empty();

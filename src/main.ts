@@ -19,7 +19,7 @@ export default class BaseViewsPlugin extends Plugin {
           this.settings[view.setting]
             ? view.create(controller, container, this)
             : new DisabledView(controller, container, view.id, view.name),
-        options: () => view.options(),
+        options: (config) => view.options(config),
       });
     }
     this.addSettingTab(new BaseViewsSettingTab(this.app, this));
