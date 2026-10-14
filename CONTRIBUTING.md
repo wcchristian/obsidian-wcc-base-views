@@ -69,3 +69,7 @@ Keep the lockfile, source, tests, samples, and documentation tracked. Do not com
 Keep `manifest.json`, `package.json`, and the lockfile on the same semantic version (for example `0.2.0`). Add that version and its minimum supported app version to `versions.json`. Run `npm run check` before tagging. The release tag must exactly match the manifest version.
 
 Pushing a version tag runs the release workflow: it checks and builds the tagged source, then uploads `main.js`, `manifest.json`, and `styles.css` to a GitHub release. A tag without these assets is not an installable release. Generated JavaScript stays out of the source tree.
+
+## README previews
+
+The README images are generated from current view renderers using fictional notes and a small Obsidian API adapter. They are labeled as renderer previews rather than live application captures. With Playwright and a compatible Chromium browser available, run `node scripts/render-readme-previews.mjs` from the repository root. Set `WCC_PLAYWRIGHT_MODULE` to a module path and `WCC_BROWSER_EXECUTABLE` to a browser executable when using external dependencies. The script updates the five-layout gallery, Calendar layouts, and task-control comparisons in `docs/screenshots/`. Inspect the images before committing them.
