@@ -13,3 +13,11 @@ Existing Bases need these view type changes:
 | `base-timeline-view` | `wcc-timeline` |
 
 Custom CSS selectors now use the `wcc-` prefix. Quick Add and custom new-note folder overrides are retired; creation uses native Bases defaults. Retired capture profile data is preserved for recovery.
+
+## Status controls and simpler settings
+
+Existing `wcc-*` views keep their type IDs and saved property mappings. The new `status_type` setting defaults to checkbox mode. A view without a configured `doneProperty` continues to have no completion checkbox. Status mode is opt-in; it writes the selected status property only when you change a pill or move a card. It never synchronizes or clears the done property.
+
+Setup, Appearance, and Advanced reorganize the menus without renaming existing configuration keys. Saved colors, images, dates, property mappings, column order, and hidden/collapsed state are retained. Hidden Kanban groups can be restored through Manage hidden groups.
+
+There are presentation and interaction changes: Calendar renders events without group headings, Kanban keeps previously seen columns when their last task leaves, and Calendar layout/Timeline zoom buttons now save their selection. These can change the appearance and saved view configuration of an existing Base. Loading a view does not rewrite task-note frontmatter; direct edits, checkbox/status clicks, and drags still write their corresponding properties.

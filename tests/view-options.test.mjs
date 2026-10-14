@@ -67,3 +67,42 @@ assert.ok(!visible(other.statusProperty));
 console.log(
   'Conditional settings follow each view’s task mode, image, calendar layout, and timeline zoom.',
 );
+
+// Emulate native option defaults on an existing Base with no completion field.
+const statusHelpers = await loadModule('src/shared/status.ts', {
+  parsePropertyId: (pid) => ({ type: pid.split('.')[0], name: pid.slice(pid.indexOf('.') + 1) }),
+});
+for (const kind of ['calendar', 'list', 'table', 'kanban', 'timeline']) {
+  const schema = fields(api[`${kind}Options`]());
+  const saved = {
+    dateProperty: 'scheduled',
+    doneProperty: 'finished',
+    colorProperty: 'project',
+    bgImage: 'cover.png',
+    columnOrder: ['Backlog'],
+    hiddenColumns: ['Deferred'],
+  };
+  const nativeConfig = {
+    get: (key) => (Object.hasOwn(saved, key) ? saved[key] : schema[key]?.default),
+  };
+  assert.equal(statusHelpers.statusType(nativeConfig), 'checkbox');
+  assert.equal(statusHelpers.checkboxProperty(nativeConfig), 'note.finished');
+  assert.equal(
+    schema.doneProperty.default,
+    undefined,
+    'no implicit completion field is introduced',
+  );
+  delete saved.doneProperty;
+  assert.equal(
+    statusHelpers.checkboxProperty(nativeConfig),
+    null,
+    'a non-task Base keeps completion controls disabled',
+  );
+  assert.equal(nativeConfig.get('dateProperty'), 'scheduled');
+  assert.equal(nativeConfig.get('colorProperty'), 'project');
+  assert.equal(nativeConfig.get('bgImage'), 'cover.png');
+  if (kind === 'kanban') {
+    assert.deepEqual(nativeConfig.get('columnOrder'), ['Backlog']);
+    assert.deepEqual(nativeConfig.get('hiddenColumns'), ['Deferred']);
+  }
+}

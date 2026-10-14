@@ -22,7 +22,11 @@ function options(kind: Kind, config: Config): BasesAllOptions[] {
       default: 'checkbox',
       options: { checkbox: 'Checkbox', status: 'Status' },
     },
-    { ...propertyOption('Checkbox property', 'doneProperty'), default: 'done', shouldHide: status },
+    {
+      ...propertyOption('Checkbox property', 'doneProperty'),
+      placeholder: 'done, or your checkbox property',
+      shouldHide: status,
+    },
     {
       ...propertyOption('Status property', 'statusProperty'),
       default: 'status',
