@@ -212,6 +212,15 @@ window.setupDrag = (mode) => {
     end: new Date('2026-03-08T00:00:00'),
     dateKey: '2026-03-07',
   });
+  view.data = {
+    groupedData: [
+      {
+        hasKey: () => false,
+        key: null,
+        entries: ['A', 'B', 'C'].map((id) => ({ ...item(id).entry, file: files[id + '.md'] })),
+      },
+    ],
+  };
   if (mode === 'list') {
     view.sortOrderProp = 'note.order';
     view.doneProp = null;
@@ -529,6 +538,13 @@ window.setupMobileTimeline = () => {
   view.items[0].title = 'Prepare project release notes and follow up with the design team';
   view.items[0].groupKey = 'Work';
   view.items[1].groupKey = 'Personal';
+  view.data = {
+    groupedData: view.items.map((item) => ({
+      hasKey: () => true,
+      key: new StringValue(item.groupKey),
+      entries: [{ ...item.entry, file: item.file }],
+    })),
+  };
   view.config.getOrder = () => ['note.project', 'note.order'];
   view.wrap.empty();
   view.buildContent(view.wrap.createDiv('wcc-timeline-scroll'));
