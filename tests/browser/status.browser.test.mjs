@@ -92,9 +92,22 @@ try {
   }
   await page.evaluate(() => window.setupStatus('kanban'));
   assert.equal(
-    await page.locator('.wcc-status-pill, [role="checkbox"], [role="switch"]').count(),
+    await page.locator('[role="checkbox"], [role="switch"]').count(),
     0,
-    'Kanban status cards have no pills or completion checkboxes',
+    'Kanban status cards have no completion checkboxes',
+  );
+  assert.equal(
+    await page.locator('.wcc-kanban-card .wcc-status-pill').count(),
+    4,
+    'each Kanban card has one status pill',
+  );
+  const pill = page.getByRole('button', { name: 'Change status for Review project scope' });
+  await pill.click();
+  await page.getByRole('button', { name: 'Waiting', exact: true }).click();
+  assert.equal(
+    await pill.textContent(),
+    'Waiting',
+    'Kanban pill offers configured statuses and changes the displayed value',
   );
   assert.equal(
     await page.locator('[data-col-key="Waiting"]').count(),
@@ -126,10 +139,7 @@ try {
   );
   assert.equal(await page.locator('.wcc-status-pill').count(), 0);
   await page.evaluate(() => window.setStatusType('status'));
-  assert.equal(
-    await page.locator('[role="checkbox"], [role="switch"], .wcc-status-pill').count(),
-    0,
-  );
+  assert.equal(await page.locator('[role="checkbox"], [role="switch"]').count(), 0);
   await page.evaluate(() => window.setStatusType('none'));
   assert.equal(
     await page.locator('.wcc-status-pill, [role="checkbox"], [role="switch"]').count(),

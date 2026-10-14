@@ -2,6 +2,7 @@ import { viewHelp } from '../../shared/view-help';
 import { CardDetails } from '../../shared/card-details';
 import {
   checkboxProperty,
+  renderStatus,
   viewGroups,
   collapseArrow,
   groupArrow,
@@ -850,7 +851,11 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     dragGrip(titleRow, `Drag ${card.title} to move or reorder`);
 
     // Completion controls share the same keyboard and save/error behavior.
-    if (donePid && parsePropertyId(donePid).type === 'note') {
+    if (
+      !renderStatus(this, titleRow, card) &&
+      donePid &&
+      parsePropertyId(donePid).type === 'note'
+    ) {
       const cb = titleRow.createEl('button', {
         cls: 'wcc-kanban-check' + (card.done ? ' wcc-kanban-check-on' : ''),
         attr: {

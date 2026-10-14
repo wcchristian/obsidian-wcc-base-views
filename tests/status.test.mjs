@@ -242,18 +242,11 @@ for (const [name, exported] of [
   for (const pid of ['note.workflow', 'note.finished']) {
     const parent = new El();
     instance.renderPropVal(parent, new BooleanValue(true), { file, entry }, pid);
-    if (name === 'kanban')
-      assert.equal(
-        parent.children.length,
-        0,
-        'Kanban status mode has no redundant completion control',
-      );
-    else
-      assert.equal(
-        parent.children[0].cls,
-        'wcc-status-pill',
-        `${name}: completion cell uses status pill`,
-      );
+    assert.equal(
+      parent.children[0].cls,
+      'wcc-status-pill',
+      `${name}: completion cell uses status pill`,
+    );
   }
 }
 console.log(

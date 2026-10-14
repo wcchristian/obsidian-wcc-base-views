@@ -40,7 +40,7 @@ class ViewHelpModal extends Modal {
     content.createEl('p', {
       text:
         this.kind === 'kanban'
-          ? 'Status mode uses the column as the status, without a pill or checkbox on the card. Group by your status property using the Bases Group menu.'
+          ? 'Status mode shows a clickable pill on each card. Change its status through the pill or drag it between status columns. Group by your status property using the Bases Group menu.'
           : 'Status pills offer values found in your notes plus values you add in settings. No status automatically counts as completed.',
     });
     content.createEl('p', {
