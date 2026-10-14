@@ -52,7 +52,6 @@ assert.deepEqual(
     'statusProperty',
     'statusValues',
     'sortOrderProperty',
-    'itemPadding',
     'colorProperty',
     'colorValues',
     'checkboxColorProperty',

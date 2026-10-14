@@ -1,3 +1,4 @@
+import { ensureManualOrder } from '../../shared/manual-order';
 import { viewHelp } from '../../shared/view-help';
 import { CardDetails } from '../../shared/card-details';
 import {
@@ -1101,7 +1102,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     if (sourceBucket !== targetBucket) {
       await this.moveCard(card.id, column, subgroup, card.subgroupKey);
     }
-    const sortProp = this.getSortOrderProp();
+    const sortProp = ensureManualOrder(this);
     if (sortProp) {
       for (let i = 0; i < order.length; i++) {
         const file = this.app.vault.getFileByPath(order[i]);

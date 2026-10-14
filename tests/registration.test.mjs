@@ -33,7 +33,7 @@ test('all five view identities are consistent and options have unique keys', asy
       .flatMap((group) => group.items ?? [group])
       .map((option) => option.key);
     assert.equal(new Set(keys).size, keys.length, `${kind} does not repeat option keys`);
-    assert.ok(keys.includes('itemPadding'));
+    assert.ok(!keys.includes('itemPadding'));
     assert.ok(keys.includes('checkboxColorProperty'));
   }
 });
@@ -56,17 +56,10 @@ test('disabled views retain their identity and display a useful placeholder', as
 test('shared appearance option objects are independent across calls and views', async () => {
   const plugin = new WccPlugin();
   await plugin.onload();
-  const first = plugin.views[0].options();
-  first
-    .find((group) => group.displayName === 'Advanced')
-    .items.find((option) => option.key === 'itemPadding').default = 99;
+  const first = plugin.views[0].options().flatMap((group) => group.items ?? [group]);
+  first.find((option) => option.key === 'bgOpacity').default = 99;
   for (const view of plugin.views) {
-    assert.equal(
-      view
-        .options()
-        .find((group) => group.displayName === 'Advanced')
-        .items.find((option) => option.key === 'itemPadding').default,
-      6,
-    );
+    const options = view.options().flatMap((group) => group.items ?? [group]);
+    assert.equal(options.find((option) => option.key === 'bgOpacity').default, 0.3);
   }
 });

@@ -1,3 +1,4 @@
+import { ensureManualOrder } from '../../shared/manual-order';
 import { viewHelp } from '../../shared/view-help';
 import { checkboxProperty, renderStatus, viewGroups, statusProperty } from '../../shared/status';
 import { setIcon } from 'obsidian';
@@ -1460,6 +1461,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     ];
     const order = moveBefore(original, id, before);
     if (!delta && original.join('\n') === order.join('\n')) return;
+    this.sortOrderProp = parsePropertyId(ensureManualOrder(this)).name;
     if (delta) {
       await this.moveEvent(id, shiftDays(ev.start, delta));
       if (this.mobileLayout) this.selectedDate = day.dateKey;

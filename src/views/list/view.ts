@@ -1,3 +1,4 @@
+import { ensureManualOrder } from '../../shared/manual-order';
 import { viewHelp } from '../../shared/view-help';
 import { checkboxProperty, renderStatus, viewGroups, groupArrow } from '../../shared/status';
 import { setIcon } from 'obsidian';
@@ -412,10 +413,6 @@ export class BaseListView extends BasesView implements HoverParent {
     if (!list || !id) return;
     const group = list.dataset.listGroup ?? NULL_KEY;
     const crossing = group !== this.dragGroupKey;
-    if (!crossing && !this.sortOrderProp) {
-      new Notice('Select a numeric sort order property to save manual list order.');
-      return;
-    }
     const file = this.app.vault.getFileByPath(id);
     if (!file) return;
     const ids = Array.from(list.querySelectorAll<HTMLElement>('.wcc-list-row'))
@@ -431,6 +428,7 @@ export class BaseListView extends BasesView implements HoverParent {
       }
       await writeProp(this.app, file, groupPid, group === NULL_KEY ? '' : group);
     }
+    this.sortOrderProp = ensureManualOrder(this);
     if (this.sortOrderProp) {
       for (let i = 0; i < order.length; i++) {
         const target = this.app.vault.getFileByPath(order[i]);

@@ -67,13 +67,13 @@ class ViewHelpModal extends Modal {
     });
     content.createEl('h3', { text: 'Advanced' });
     content.createEl('p', {
-      text: 'Manual order property should be a number property, such as rank. Dragging writes numbers to this property to save the task order.',
+      text: 'Reordering automatically uses an order property if you have not chosen one. It avoids existing text fields. Set manual order property to use a different number property, such as rank.',
     });
     content.createEl('p', {
       text: 'Custom color rules use value:color, for example high:red or low:#8b5cf6. Task control colors apply to both checkboxes and status pills. Choose the coloring property in advanced settings.',
     });
     content.createEl('p', {
-      text: 'Custom padding controls the space inside cards. Background image accepts a vault path or image URL; fit, blur, and opacity appear after you choose an image.',
+      text: 'Spacing follows the selected density. Background image accepts a vault path or image URL; fit, blur, and opacity appear after you choose an image.',
     });
     if (this.kind === 'kanban')
       content.createEl('p', {

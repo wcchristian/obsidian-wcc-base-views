@@ -1,6 +1,5 @@
 import type { BasesAllOptions, BasesOptions } from 'obsidian';
 import { propertyOption } from '../shared/view-properties';
-import { itemPaddingOption } from '../shared/view-spacing';
 import { densityOptions } from '../shared/view-density';
 import { statusType } from '../shared/status';
 
@@ -85,7 +84,6 @@ function options(kind: Kind, config: Config): BasesAllOptions[] {
   appearance.push(propertyOption('Color cards by', 'colorProperty'));
   advanced.push(
     propertyOption('Manual order property (number)', 'sortOrderProperty'),
-    { ...itemPaddingOption, displayName: 'Custom padding' },
     {
       type: 'multitext',
       displayName: 'Custom colors (value:color)',
