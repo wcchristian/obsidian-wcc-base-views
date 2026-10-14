@@ -35,7 +35,7 @@ class ViewHelpModal extends Modal {
     content.empty();
     content.createEl('h3', { text: 'Setup' });
     content.createEl('p', {
-      text: 'Choose checkbox mode to mark tasks done, or status mode to choose a status. Property names can be existing or new; selecting a name does not change your notes.',
+      text: 'Choose checkbox mode to mark tasks done, status mode to choose a status, or none to hide task controls. Unset task control defaults to checkbox. Property names can be existing or new; selecting a name does not change your notes.',
     });
     content.createEl('p', {
       text:

@@ -81,6 +81,13 @@ try {
       mode + ' has no completion checkbox in status mode',
     );
     assert.ok((await page.locator('.wcc-status-pill').count()) > 0);
+    await page.evaluate(() => window.setStatusType('none'));
+    assert.equal(
+      await page.locator('.wcc-status-pill, [role="checkbox"], [role="switch"]').count(),
+      0,
+      mode + ' hides task controls in none mode',
+    );
+    await page.evaluate(() => window.setStatusType('status'));
     if (mode === 'month') await page.screenshot({ path: '/tmp/wcc-calendar-flat-status.png' });
   }
   await page.evaluate(() => window.setupStatus('kanban'));
@@ -123,6 +130,13 @@ try {
     await page.locator('[role="checkbox"], [role="switch"], .wcc-status-pill').count(),
     0,
   );
+  await page.evaluate(() => window.setStatusType('none'));
+  assert.equal(
+    await page.locator('.wcc-status-pill, [role="checkbox"], [role="switch"]').count(),
+    0,
+    'Kanban none mode hides completion controls even when done is selected',
+  );
+  await page.evaluate(() => window.setStatusType('status'));
   await page.evaluate(() => window.hideTestGroups());
   assert.equal(await page.locator('[data-col-key="Waiting"]').count(), 0);
   await page.getByRole('button', { name: 'Manage hidden groups' }).click();

@@ -11,6 +11,7 @@ const emptyConfig: Config = { get: () => undefined };
 /** Each menu captures its own view config; visibility follows the current selections. */
 function options(kind: Kind, config: Config): BasesAllOptions[] {
   const status = () => statusType(config) === 'status';
+  const checkbox = () => statusType(config) === 'checkbox';
   const blank = (key: string) => !config.get(key);
   const mode = () => config.get('viewMode') || 'month';
   const zoom = () => config.get('zoomLevel') || 'week';
@@ -20,12 +21,12 @@ function options(kind: Kind, config: Config): BasesAllOptions[] {
       displayName: 'Task control',
       key: 'status_type',
       default: 'checkbox',
-      options: { checkbox: 'Checkbox', status: 'Status' },
+      options: { checkbox: 'Checkbox', status: 'Status', none: 'None' },
     },
     {
       ...propertyOption('Checkbox property', 'doneProperty'),
       placeholder: 'done, or your checkbox property',
-      shouldHide: status,
+      shouldHide: () => !checkbox(),
     },
     {
       ...propertyOption('Status property', 'statusProperty'),
@@ -94,14 +95,14 @@ function options(kind: Kind, config: Config): BasesAllOptions[] {
     },
     {
       ...propertyOption('Color checkboxes by', 'checkboxColorProperty'),
-      shouldHide: () => status() || kind === 'table',
+      shouldHide: () => !checkbox() || kind === 'table',
     },
     {
       type: 'multitext',
       displayName: 'Checkbox colors (value:color)',
       key: 'checkboxColorValues',
       default: [],
-      shouldHide: () => status() || kind === 'table' || blank('checkboxColorProperty'),
+      shouldHide: () => !checkbox() || kind === 'table' || blank('checkboxColorProperty'),
     },
     {
       type: 'text',

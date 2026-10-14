@@ -1,4 +1,4 @@
-import { renderStatus, statusProperty } from './status';
+import { renderStatus, statusProperty, statusType } from './status';
 import { viewProperty } from './view-properties';
 import type {
   App,
@@ -61,6 +61,14 @@ export class PropertyFieldRenderer {
     const editable = parsePropertyId(pid).type === 'note';
     const empty = val instanceof NullValue;
     const valueEl = parent.createDiv(`${this.prefix}-prop-value`);
+    if (
+      val instanceof BooleanValue &&
+      statusType(this.config) === 'none' &&
+      pid === (viewProperty(this.config, 'doneProperty') ?? 'note.done')
+    ) {
+      valueEl.createSpan({ text: val.isTruthy() ? 'true' : 'false' });
+      return;
+    }
     if (val instanceof BooleanValue && editable) {
       let checked = val.isTruthy();
       const toggle = valueEl.createEl('button', {

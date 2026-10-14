@@ -16,7 +16,7 @@ Custom CSS selectors now use the `wcc-` prefix. Quick Add and custom new-note fo
 
 ## Status controls and simpler settings
 
-Existing `wcc-*` views keep their type IDs and saved property mappings. The new `status_type` setting defaults to checkbox mode. A view without a configured `doneProperty` continues to have no completion checkbox. Status mode is opt-in; it writes the selected status property only when you change a pill or move a card. It never synchronizes or clears the done property.
+Existing `wcc-*` views keep their type IDs and saved property mappings. The new `status_type` setting defaults to checkbox mode. A view without a configured `doneProperty` continues to have no completion checkbox. Choose `status_type: none` to hide task checkboxes and status pills without changing stored task properties. Status mode is opt-in; it writes the selected status property only when you change a pill or move a card. It never synchronizes or clears the done property.
 
 Setup, Appearance, and Advanced reorganize the menus without renaming existing configuration keys. Saved colors, images, dates, property mappings, column order, and hidden/collapsed state are retained. Hidden Kanban groups can be restored through Manage hidden groups.
 

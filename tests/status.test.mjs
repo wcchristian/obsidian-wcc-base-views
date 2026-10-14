@@ -59,6 +59,9 @@ class El {
     this.children.push(el);
     return el;
   }
+  createSpan(opts) {
+    return this.createEl('span', opts);
+  }
   createDiv(opts) {
     return this.createEl('div', typeof opts === 'string' ? { cls: opts } : opts);
   }
@@ -294,12 +297,16 @@ assert.deepEqual(
   'adding a column never creates or modifies notes',
 );
 
-// The requested view key overrides the legacy key; legacy Bases still load when unset.
+// The requested view key is authoritative; an unset mode defaults to checkbox.
 settings.completionType = 'status';
 settings.status_type = 'checkbox';
 assert.equal(statusProperty(config), null);
 delete settings.status_type;
-assert.equal(statusProperty(config), 'note.workflow');
+assert.equal(
+  statusProperty(config),
+  null,
+  'unset mode defaults to checkbox even if the legacy completionType key exists',
+);
 settings.status_type = 'status';
 // Calendar does not create group containers for either empty or occupied days.
 const { BaseCalendarView } = await loadModule('src/views/calendar/view.ts', api);
@@ -313,3 +320,25 @@ assert.equal(flatParent.children.length, 0);
 calendar.renderDayChips(flatParent, [{ title: 'Task', groupKey: 'Working' }]);
 assert.equal(chips.length, 1);
 assert.equal(flatParent.children.length, 0, 'calendar renders cards without group headings');
+
+settings.status_type = 'none';
+assert.equal(checkboxProperty(config), null);
+assert.equal(statusProperty(config), null);
+assert.equal(renderStatus(view, new El(), { file, entry }), false);
+for (const [name, exported] of [
+  ['list', 'BaseListView'],
+  ['table', 'BaseTableView'],
+  ['calendar', 'BaseCalendarView'],
+  ['kanban', 'BaseKanbanView'],
+  ['timeline', 'BaseTimelineView'],
+]) {
+  const module = await loadModule(`src/views/${name}/view.ts`, api);
+  const instance = Object.assign(Object.create(module[exported].prototype), view);
+  const parent = new El();
+  instance.renderPropVal(parent, new BooleanValue(true), { file, entry }, 'note.finished');
+  assert.equal(
+    parent.children[0].children[0].textContent,
+    'true',
+    `${name}: explicit completion metadata has no checkbox in none mode`,
+  );
+}

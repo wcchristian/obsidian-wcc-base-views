@@ -23,6 +23,16 @@ for (const kind of ['calendar', 'list', 'table', 'kanban', 'timeline']) {
   assert.ok(visible(options.statusValues));
   assert.ok(!visible(options.checkboxColorProperty));
   assert.ok(!visible(options.checkboxColorValues));
+  values.status_type = 'none';
+  for (const key of [
+    'doneProperty',
+    'statusProperty',
+    'statusValues',
+    'checkboxColorProperty',
+    'checkboxColorValues',
+  ])
+    assert.ok(!visible(options[key]), `${kind} hides ${key} in none mode`);
+  values.status_type = 'status';
   delete values.bgImage;
   assert.ok(visible(options.bgImage));
   for (const key of ['bgFit', 'bgBlur', 'bgOpacity']) assert.ok(!visible(options[key]));
