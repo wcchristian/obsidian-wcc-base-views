@@ -4,13 +4,18 @@ import { viewProperty, propertyId } from './view-properties';
 import { writeProp } from './frontmatter';
 
 type Config = { get(key: string): unknown };
+export function statusType(config: Config): 'checkbox' | 'status' {
+  const value = config.get('status_type');
+  if (value === 'status' || value === 'checkbox') return value;
+  return config.get('completionType') === 'status' ? 'status' : 'checkbox';
+}
 export function statusProperty(config: Config): BasesPropertyId | null {
-  if (config.get('completionType') !== 'status') return null;
+  if (statusType(config) !== 'status') return null;
   const pid = viewProperty(config, 'statusProperty') ?? 'note.status';
   return parsePropertyId(pid).type === 'note' ? pid : null;
 }
 export function checkboxProperty(config: Config): BasesPropertyId | null {
-  if (config.get('completionType') === 'status') return null;
+  if (statusType(config) === 'status') return null;
   const pid = viewProperty(config, 'doneProperty');
   return pid && parsePropertyId(pid).type === 'note' ? pid : null;
 }

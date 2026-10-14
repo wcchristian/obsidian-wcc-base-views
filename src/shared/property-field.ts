@@ -55,7 +55,7 @@ export class PropertyFieldRenderer {
       statusPid &&
       (pid === statusPid || pid === (viewProperty(this.config, 'doneProperty') ?? 'note.done'))
     ) {
-      renderStatus(this.host, parent, item);
+      if (this.prefix !== 'wcc-kanban') renderStatus(this.host, parent, item);
       return;
     }
     const editable = parsePropertyId(pid).type === 'note';

@@ -20,8 +20,8 @@ Use the native Bases filters, sorting, grouping, and property selection with eve
 
 ## Make it fit your workflow
 
-- **Completion type:** In each view, choose **Completion → Checkbox** and a Done field, or **Status** and a Status field. Status mode uses clickable pills and does not mark any status as completed. There are no default statuses. **Show these statuses** adds choices and keeps their groups visible when empty; values found in notes remain visible even if omitted from that list. Group by the selected status field to see those empty groups. Kanban’s **+ Add column** adds a value to that view’s settings without creating a placeholder note.
-- **Group arrows:** Expand and collapse groups directly in every view. Kanban columns and card details also have visible arrow controls.
+- **Status type:** Each view stores `status_type: checkbox` or `status`. Choose **Status → Checkbox** and a Done field, or **Status** and a Status field. Status mode uses clickable pills (Kanban uses the column instead) and does not mark any status as completed. There are no default statuses. **Show these statuses** adds choices and keeps their groups visible when empty; values found in notes remain visible even if omitted from that list. Group by the selected status field to see those empty groups. Kanban’s **+ Add column** adds a value to that view’s settings without creating a placeholder note.
+- **Group arrows:** Expand and collapse groups directly in List, Table, Timeline, and Kanban. Calendar keeps events flat and offers card details arrows. Kanban columns and card details also have visible arrow controls.
 - **Compact cards:** List and Calendar offer Compact and Comfortable density, adjustable padding, and an option to hide empty properties.
 - **Expandable details:** List, Agenda, and Calendar cards have a details arrow. Turn on **Spacing → Expand details by default** to start a view expanded. Individual choices survive data refreshes while the view stays open.
 - **Color by property:** Use project colors for cards and separate priority colors for checkboxes. Linked project names work with short color rules such as `Work:orange`.
@@ -62,7 +62,7 @@ order: 10
 
 The note's filename supplies its title. None of these property names are mandatory. For this example:
 
-- Set Calendar's **Date property** to `date`, and List or Calendar's **Completion → Done field (checkbox)** to `done`.
+- Set Calendar's **Date property** to `date`, and List or Calendar's **Status → Done field (checkbox)** to `done`.
 - Set **Color by property** to `project`, with a rule such as `Work:orange`.
 - Set **Color checkbox by property** to `priority`, with rules such as `high:red`, `med:orange`, and `low:blue`.
 - Group a Kanban view by `status`. Use a numeric **Sort order property**, such as `order`, when you want to save manual ordering.
@@ -85,3 +85,5 @@ The plugin does not collect telemetry or require an account or subscription. Bac
 - [Development and release guide](https://github.com/wcchristian/obsidian-wcc-base-views/blob/main/CONTRIBUTING.md)
 
 This plugin is under active development. Licensed under [MIT](https://github.com/wcchristian/obsidian-wcc-base-views/blob/main/LICENSE).
+
+Calendar events stay flat: status pill, title, and a details arrow, without repeated group headings in each day. Kanban retains columns after their last task leaves; hide unwanted columns through the column menu.

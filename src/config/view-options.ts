@@ -7,12 +7,12 @@ function completionOptions(): BasesAllOptions[] {
   return [
     {
       type: 'group',
-      displayName: 'Completion',
+      displayName: 'Status',
       items: [
         {
           type: 'dropdown',
-          displayName: 'Completion type',
-          key: 'completionType',
+          displayName: 'Status type',
+          key: 'status_type',
           default: 'checkbox',
           options: { checkbox: 'Checkbox', status: 'Status' },
         },

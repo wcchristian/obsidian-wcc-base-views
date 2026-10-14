@@ -1,12 +1,4 @@
-import {
-  checkboxProperty,
-  renderStatus,
-  viewGroups,
-  groupArrow,
-  statusChoices,
-  statusProperty,
-  groupProperty,
-} from '../../shared/status';
+import { checkboxProperty, renderStatus, viewGroups, statusProperty } from '../../shared/status';
 import { setIcon } from 'obsidian';
 import { CardDetails } from '../../shared/card-details';
 import { distributeEvents, sortSegments, assignLanes } from './layout';
@@ -953,39 +945,8 @@ export class BaseCalendarView extends BasesView implements HoverParent {
   }
 
   private renderDayChips(parent: HTMLElement, evs: CalEvent[]) {
-    if (!this.grouped) {
-      evs.forEach((ev) => this.makeChip(parent, ev));
-      return;
-    }
-    const order: string[] = [];
-    const byKey = new Map<string, CalEvent[]>();
-    for (const ev of evs) {
-      const k = ev.groupKey;
-      if (!byKey.has(k)) {
-        byKey.set(k, []);
-        order.push(k);
-      }
-      byKey.get(k)!.push(ev);
-    }
-    if (statusProperty(this.config) && groupProperty(this.config) === statusProperty(this.config)) {
-      for (const k of statusChoices(this))
-        if (!byKey.has(k)) {
-          byKey.set(k, []);
-          order.push(k);
-        }
-    }
-    for (const k of order) {
-      const section = parent.createDiv('wcc-calendar-group');
-      const label = section.createDiv('wcc-calendar-group-label');
-      const collapsed = groupArrow(this, label, k);
-      label.createSpan({ text: k || '—' });
-      label.title = k || '—';
-      const items = section.createDiv('wcc-calendar-group-items');
-      items.hidden = collapsed;
-      for (const ev of byKey.get(k)!) {
-        this.makeChip(items, ev);
-      }
-    }
+    // Status belongs to the event pill; repeating group headings crowds the date grid.
+    evs.forEach((ev) => this.makeChip(parent, ev));
   }
 
   private getEventColor(ev: CalEvent): string | null {
@@ -1217,6 +1178,12 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.propOrder.forEach((pid) => {
       if (pid === 'file.name') return;
       if (this.doneProp && pid === this.doneProp) return;
+      if (
+        statusProperty(this.config) &&
+        (pid === statusProperty(this.config) ||
+          pid === (viewProperty(this.config, 'doneProperty') ?? 'note.done'))
+      )
+        return;
       if (compact && (pid === this.dateProp || pid === this.endProp)) return;
       const val = ev.entry.getValue(pid);
       if (hideProperty(val, this.config)) return;
@@ -1549,7 +1516,7 @@ export class BaseCalendarView extends BasesView implements HoverParent {
     this.events = [];
     if (!groups?.length) return;
 
-    this.grouped = groups.some((g) => g.hasKey());
+    this.grouped = false; // Calendar cards use a flat date layout regardless of native grouping.
     this.events = [];
     const dp = this.dateProp;
     const ep = this.endProp;

@@ -1,7 +1,6 @@
 import { CardDetails } from '../../shared/card-details';
 import {
   checkboxProperty,
-  renderStatus,
   viewGroups,
   collapseArrow,
   groupArrow,
@@ -366,7 +365,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         allColKeysRaw.push(key);
       }
     }
-    for (const key of statusGrouped ? [] : this.getColumnOrder())
+    for (const key of this.getColumnOrder())
       if (!colKeySet.has(key)) {
         colKeySet.add(key);
         allColKeysRaw.push(key);
@@ -505,7 +504,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     if (groupPid && parsePropertyId(groupPid).type === 'note') {
       const creator = board.createDiv('wcc-kanban-column-creator');
       const add = creator.createEl('button', {
-        text: '+',
+        text: 'Add column',
         cls: 'wcc-kanban-add-column',
         attr: { type: 'button', 'aria-label': 'Add column', title: 'Add column' },
       });
@@ -810,11 +809,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     dragGrip(titleRow, `Drag ${card.title} to move or reorder`);
 
     // Completion controls share the same keyboard and save/error behavior.
-    if (
-      !renderStatus(this, titleRow, card) &&
-      donePid &&
-      parsePropertyId(donePid).type === 'note'
-    ) {
+    if (donePid && parsePropertyId(donePid).type === 'note') {
       const cb = titleRow.createEl('button', {
         cls: 'wcc-kanban-check' + (card.done ? ' wcc-kanban-check-on' : ''),
         attr: {
@@ -905,6 +900,12 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         const { type } = parsePropertyId(pid);
         if (pid === 'file.name') continue;
         if (donePid && pid === donePid) continue;
+        if (
+          statusProperty(this.config) &&
+          (pid === statusProperty(this.config) ||
+            pid === (viewProperty(this.config, 'doneProperty') ?? 'note.done'))
+        )
+          continue;
         if (coverPid && pid === coverPid) continue;
         const val = card.entry.getValue(pid);
         if ((!val || val instanceof NullValue) && type !== 'note') continue;

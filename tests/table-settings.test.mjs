@@ -47,7 +47,7 @@ const options = table.options().flatMap((group) => group.items ?? [group]);
 assert.deepEqual(
   options.map((option) => option.key),
   [
-    'completionType',
+    'status_type',
     'doneProperty',
     'statusProperty',
     'statusValues',

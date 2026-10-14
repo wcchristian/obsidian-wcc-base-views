@@ -298,8 +298,8 @@
   font-weight: 500;
   cursor: pointer;
   overflow: hidden;
-  background: color-mix(in srgb, var(--interactive-accent) 35%, var(--background-primary));
-  border-left: 3px solid var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+  border-left: 2px solid var(--interactive-accent);
   color: var(--text-normal);
   display: flex;
   align-items: center;
@@ -373,15 +373,15 @@
   font-size: var(--font-ui-smaller);
   cursor: pointer;
   overflow: hidden;
-  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
-  border-left: 2px solid var(--interactive-accent);
+  background: var(--background-secondary);
+  border-left: 2px solid color-mix(in srgb, var(--interactive-accent) 50%, transparent);
   transition: background 100ms ease;
   color: var(--text-normal);
   position: relative;
 }
 
 .wcc-calendar-chip:hover {
-  background: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
+  background: var(--background-modifier-hover);
 }
 
 .wcc-calendar-chip.wcc-calendar-dragging {
@@ -3565,16 +3565,26 @@ textarea.wcc-table-prop-input {
 
 /* Status controls are shared by every view. */
 button.wcc-status-pill {
-  border-radius: 999px;
-  padding: 2px 9px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 16%, transparent);
+  padding: 1px 7px;
   height: auto;
-  min-height: 22px;
-  font-size: var(--font-smallest);
+  min-height: 20px;
+  font-size: var(--font-smallest, 11px);
+  font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+  color: var(--text-muted);
   box-shadow: none;
+}
+button.wcc-status-pill:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+button.wcc-status-pill:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 button.wcc-collapse-arrow,
 button.wcc-card-details {
@@ -3612,4 +3622,48 @@ button.wcc-card-details {
 .wcc-calendar-group-label {
   display: flex;
   align-items: center;
+}
+
+/* Flat calendar events: quiet surfaces, readable titles, and space between cards. */
+.wcc-calendar-wrap .wcc-calendar-evs {
+  gap: 5px;
+}
+.wcc-calendar-wrap .wcc-calendar-cell {
+  padding: 6px;
+}
+.wcc-calendar-wrap .wcc-calendar-chip-title {
+  align-items: center;
+  gap: 6px;
+}
+.wcc-calendar-wrap .wcc-calendar-chip-link {
+  font-weight: 500;
+}
+.wcc-calendar-wrap .wcc-calendar-chip-props {
+  padding-left: 0;
+}
+.wcc-kanban-wrap .wcc-kanban-col-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+}
+button.wcc-kanban-add-column {
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 7px;
+  padding: 6px 12px;
+  height: auto;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+button.wcc-kanban-add-column:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+button.wcc-kanban-add-column::before {
+  content: '+';
+  margin-right: 6px;
 }

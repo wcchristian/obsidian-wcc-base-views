@@ -105,7 +105,7 @@ const api = new Proxy(
 const { statusProperty, checkboxProperty, statusChoices, viewGroups, renderStatus, groupArrow } =
   await loadModule('src/shared/status.ts', api);
 const settings = {
-  completionType: 'status',
+  status_type: 'status',
   statusProperty: 'workflow',
   doneProperty: 'finished',
   statusValues: [' Waiting ', 'Waiting', '', 'Review'],
@@ -220,13 +220,13 @@ assert.equal(groupArrow(view, collapsedHeader, 'Waiting'), true);
 assert.equal(collapsedHeader.children[0].attrs['aria-expanded'], 'false');
 collapsedHeader.children[0].onclick(event);
 assert.deepEqual(settings.collapsedGroups, []);
-settings.completionType = 'checkbox';
+settings.status_type = 'checkbox';
 assert.equal(checkboxProperty(config), 'note.finished');
 assert.equal(renderStatus(view, new El(), { file, entry }), false);
 assert.equal(statusProperty(config), null);
 assert.equal(viewGroups(view).length, 1, 'checkbox mode preserves native groups');
 // Each actual view delegates completion-related cells to the same pill renderer.
-settings.completionType = 'status';
+settings.status_type = 'status';
 for (const [name, exported] of [
   ['list', 'BaseListView'],
   ['table', 'BaseTableView'],
@@ -239,15 +239,22 @@ for (const [name, exported] of [
   for (const pid of ['note.workflow', 'note.finished']) {
     const parent = new El();
     instance.renderPropVal(parent, new BooleanValue(true), { file, entry }, pid);
-    assert.equal(
-      parent.children[0].cls,
-      'wcc-status-pill',
-      `${name}: completion cell uses status pill`,
-    );
+    if (name === 'kanban')
+      assert.equal(
+        parent.children.length,
+        0,
+        'Kanban status mode has no redundant completion control',
+      );
+    else
+      assert.equal(
+        parent.children[0].cls,
+        'wcc-status-pill',
+        `${name}: completion cell uses status pill`,
+      );
   }
 }
 console.log(
-  'Status unions, empty groups, typed writes, failure recovery, arrows, and pills in all five views passed.',
+  'Status unions, empty groups, typed writes, failure recovery, arrows, and status controls across all five views passed.',
 );
 
 // Exercise the actual Kanban + form, including persistence of an empty status.
@@ -286,3 +293,23 @@ assert.deepEqual(
   { workflow: null, finished: true, unrelated: 42 },
   'adding a column never creates or modifies notes',
 );
+
+// The requested view key overrides the legacy key; legacy Bases still load when unset.
+settings.completionType = 'status';
+settings.status_type = 'checkbox';
+assert.equal(statusProperty(config), null);
+delete settings.status_type;
+assert.equal(statusProperty(config), 'note.workflow');
+settings.status_type = 'status';
+// Calendar does not create group containers for either empty or occupied days.
+const { BaseCalendarView } = await loadModule('src/views/calendar/view.ts', api);
+const calendar = Object.create(BaseCalendarView.prototype);
+const chips = [];
+calendar.makeChip = (_parent, item) => chips.push(item);
+calendar.grouped = true;
+const flatParent = new El();
+calendar.renderDayChips(flatParent, []);
+assert.equal(flatParent.children.length, 0);
+calendar.renderDayChips(flatParent, [{ title: 'Task', groupKey: 'Working' }]);
+assert.equal(chips.length, 1);
+assert.equal(flatParent.children.length, 0, 'calendar renders cards without group headings');
