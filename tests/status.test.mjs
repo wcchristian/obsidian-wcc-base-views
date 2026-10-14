@@ -52,6 +52,11 @@ class El {
     this.textContent = opts.text ?? '';
     this.parent = parent;
     this.cls = opts.cls;
+    this.style = {
+      removeProperty: (key) => {
+        if (this.cssProps) delete this.cssProps[key];
+      },
+    };
   }
   createEl(_tag, opts) {
     const el = new El(opts, this);
@@ -85,6 +90,9 @@ class El {
     this.attrs[key] = value;
   }
   toggleClass() {}
+  setCssProps(props) {
+    this.cssProps = { ...this.cssProps, ...props };
+  }
 }
 const notices = [];
 const api = new Proxy(
@@ -179,12 +187,15 @@ assert.deepEqual(
   'no invented unassigned bucket in an empty Base',
 );
 view.data.groupedData = originalGroups;
+settings.checkboxColorProperty = 'workflow';
+settings.checkboxColorValues = ['Working:#619de6', 'Waiting:#e6ac45'];
 const root = new El();
 const event = { preventDefault() {}, stopPropagation() {} };
 assert.equal(renderStatus(view, root, { file, entry }), true);
 const pill = root.children[0];
 assert.equal(pill.cls, 'wcc-status-pill');
 assert.equal(pill.textContent, 'Working');
+assert.equal(pill.cssProps['--wcc-status-color'], '#619de6');
 pill.onclick(event);
 assert.deepEqual(
   Menu.last.items.map((i) => i.title),
@@ -192,6 +203,11 @@ assert.deepEqual(
 );
 await Menu.last.items.find((i) => i.title === 'Waiting').click();
 assert.equal(pill.textContent, 'Waiting');
+assert.equal(
+  pill.cssProps['--wcc-status-color'],
+  '#e6ac45',
+  'status-based tint refreshes immediately after changing the pill',
+);
 assert.deepEqual(
   fm,
   { workflow: 'Waiting', finished: true, unrelated: 42 },
@@ -213,6 +229,11 @@ fail = false;
 pill.onclick(event);
 await Menu.last.items.find((i) => i.title === 'No status').click();
 assert.equal(fm.workflow, null);
+assert.equal(
+  pill.cssProps['--wcc-status-color'],
+  undefined,
+  'clearing a status clears its old mapped tint',
+);
 const header = new El();
 assert.equal(groupArrow(view, header, 'Waiting'), false);
 assert.equal(header.children[0].icon, 'chevron-down');

@@ -28,7 +28,7 @@ const notes = [
  {title:'Verify status controls across views', status:'Working', date:'2026-10-13', end:'2026-10-16'},
  {title:'Try an unlisted status', status:'Investigating', date:'2026-10-15', end:'2026-10-15'},
 ];
-const values = {status_type:'status',statusProperty:'status',doneProperty:'done',statusValues:['Waiting'],groupBy:{property:'status'},dateProperty:'date',endDateProperty:'end',density:'compact',detailsExpanded:false,viewMode:'month',showEmptyColumns:true};
+const values = {status_type:'status',statusProperty:'status',doneProperty:'done',statusValues:['Waiting'],checkboxColorProperty:'status',checkboxColorValues:['Working:#619de6','Waiting:#e6ac45'],groupBy:{property:'status'},dateProperty:'date',endDateProperty:'end',density:'compact',detailsExpanded:false,viewMode:'month',showEmptyColumns:true};
 const config={get:key=>values[key],set:(key,value)=>{values[key]=value;},getOrder:()=>['file.name','note.status','note.done','note.date','note.end','note.notes'],getDisplayName:pid=>pid.replace('note.','')};
 const data=()=>{const grouped=new Map(); for(const note of notes){const file=new TFile(note.title+'.md');const entry={file,getValue:pid=>{const name=pid.replace('note.','');return name==='done'?new BooleanValue(false):note[name]?new StringValue(note[name]):new NullValue();}};if(!grouped.has(note.status))grouped.set(note.status,[]);grouped.get(note.status).push(entry);}return {groupedData:[...grouped].map(([key,entries])=>({key:new StringValue(key),hasKey:()=>true,entries}))};};
 const app={metadataCache:{getFileCache:()=>({frontmatter:{}})},fileManager:{async processFrontMatter(){}},workspace:{getLeaf:()=>({openFile(){}}),trigger(){}},vault:{getAbstractFileByPath(){return null;}}};
@@ -102,8 +102,17 @@ try {
     'each Kanban card has one status pill',
   );
   const pill = page.getByRole('button', { name: 'Change status for Review project scope' });
+  assert.equal(
+    await pill.evaluate((el) => el.style.getPropertyValue('--wcc-status-color')),
+    '#619de6',
+  );
   await pill.click();
   await page.getByRole('button', { name: 'Waiting', exact: true }).click();
+  assert.equal(
+    await pill.evaluate((el) => el.style.getPropertyValue('--wcc-status-color')),
+    '#e6ac45',
+    'mapped status color refreshes after selection',
+  );
   assert.equal(
     await pill.textContent(),
     'Waiting',

@@ -70,7 +70,7 @@ class ViewHelpModal extends Modal {
       text: 'Manual order property should be a number property, such as rank. Dragging writes numbers to this property to save the task order.',
     });
     content.createEl('p', {
-      text: 'Custom color rules use value:color, for example high:red or low:#8b5cf6. Checkbox colors are available only in checkbox mode.',
+      text: 'Custom color rules use value:color, for example high:red or low:#8b5cf6. Task control colors apply to both checkboxes and status pills. Choose the coloring property in advanced settings.',
     });
     content.createEl('p', {
       text: 'Custom padding controls the space inside cards. Background image accepts a vault path or image URL; fit, blur, and opacity appear after you choose an image.',

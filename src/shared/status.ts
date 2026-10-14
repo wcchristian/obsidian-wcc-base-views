@@ -1,3 +1,4 @@
+import { colorStatus } from './task-appearance';
 import type { BasesView, BasesPropertyId, BasesEntry, TFile } from 'obsidian';
 import { Menu, Notice, NullValue, StringValue, parsePropertyId, setIcon } from 'obsidian';
 import { viewProperty, propertyId } from './view-properties';
@@ -92,6 +93,7 @@ export function renderStatus(
       'aria-label': `Change status for ${item.title ?? item.file.basename}`,
     },
   });
+  if (item.entry) colorStatus(button, view.config, item.entry);
   button.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -109,6 +111,15 @@ export function renderStatus(
               await writeProp(view.app, item.file, pid, value);
               current = value;
               button.textContent = value || 'No status';
+              if (item.entry)
+                colorStatus(button, view.config, {
+                  getValue: (key) =>
+                    key === pid
+                      ? value
+                        ? new StringValue(value)
+                        : new NullValue()
+                      : item.entry!.getValue(key),
+                });
             } catch (error) {
               console.error(error);
               new Notice('Failed to update status');

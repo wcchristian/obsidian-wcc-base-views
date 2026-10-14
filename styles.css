@@ -3697,3 +3697,13 @@ button.wcc-view-help:focus-visible {
   order: 1;
   margin-left: auto;
 }
+
+button.wcc-status-pill.wcc-colored-status {
+  color: var(--wcc-status-color);
+  border-color: color-mix(in srgb, var(--wcc-status-color) 35%, transparent);
+  background: color-mix(in srgb, var(--wcc-status-color) 12%, var(--background-primary));
+}
+button.wcc-status-pill.wcc-colored-status:hover {
+  border-color: var(--wcc-status-color);
+  background: color-mix(in srgb, var(--wcc-status-color) 20%, var(--background-primary));
+}

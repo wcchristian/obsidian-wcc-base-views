@@ -64,7 +64,7 @@ The note's filename supplies its title. None of these property names are mandato
 
 - Set Calendar's **Date property** to `date`, and List or Calendar's **Setup → Checkbox property** to `done`.
 - Set **Appearance → Color cards by** to `project`, with a rule such as `Work:orange`.
-- Set **Advanced → Color checkboxes by** to `priority`, with rules such as `high:red`, `med:orange`, and `low:blue`.
+- Set **Advanced → Color task controls by** to `priority`, with rules such as `high:red`, `med:orange`, and `low:blue`.
 - Group a Kanban view by `status`. Use a numeric **Sort order property**, such as `order`, when you want to save manual ordering.
 
 To hide completed tasks, add a Base filter for `done` not being true. Completion alone does not remove a note from the view. Calendar needs a valid date to display a note; Timeline needs a start date and can also use an end-date property.
@@ -93,3 +93,5 @@ Calendar events stay flat: status pill, title, and a details arrow, without repe
 Every view uses **Setup**, **Appearance**, and **Advanced**. Settings that do not apply are hidden: status fields in checkbox mode, checkbox fields in status mode, image controls without an image, and calendar/timeline options for inactive layouts or zoom levels. The toolbar layout and zoom buttons also update the saved selection.
 
 Use the **?** button beside a view to read setup help, property guidance, and examples. Background images, custom padding, manual ordering, and detailed color rules remain in Advanced, preserving existing configurations. Kanban column order and collapse state are managed by dragging and arrows. Hide groups through their menus and restore them through **Manage hidden groups**, which appears when a group is hidden.
+
+**Advanced → Color task controls by** and **Task control colors** apply the same property/value mapping to checkbox accents and status-pill text, borders, and background tints. These controls are available in Status mode as well as Checkbox mode, and hidden in None mode. Existing checkbox color settings are reused.

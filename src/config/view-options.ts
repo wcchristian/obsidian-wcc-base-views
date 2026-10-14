@@ -94,15 +94,18 @@ function options(kind: Kind, config: Config): BasesAllOptions[] {
       shouldHide: () => blank('colorProperty'),
     },
     {
-      ...propertyOption('Color checkboxes by', 'checkboxColorProperty'),
-      shouldHide: () => !checkbox() || kind === 'table',
+      ...propertyOption('Color task controls by', 'checkboxColorProperty'),
+      shouldHide: () => statusType(config) === 'none' || (checkbox() && kind === 'table'),
     },
     {
       type: 'multitext',
-      displayName: 'Checkbox colors (value:color)',
+      displayName: 'Task control colors (value:color)',
       key: 'checkboxColorValues',
       default: [],
-      shouldHide: () => !checkbox() || kind === 'table' || blank('checkboxColorProperty'),
+      shouldHide: () =>
+        statusType(config) === 'none' ||
+        (checkbox() && kind === 'table') ||
+        blank('checkboxColorProperty'),
     },
     {
       type: 'text',

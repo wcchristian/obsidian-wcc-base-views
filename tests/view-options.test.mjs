@@ -21,7 +21,10 @@ for (const kind of ['calendar', 'list', 'table', 'kanban', 'timeline']) {
   assert.ok(!visible(options.doneProperty));
   assert.ok(visible(options.statusProperty));
   assert.ok(visible(options.statusValues));
-  assert.ok(!visible(options.checkboxColorProperty));
+  assert.ok(visible(options.checkboxColorProperty));
+  values.checkboxColorProperty = 'priority';
+  assert.ok(visible(options.checkboxColorValues));
+  delete values.checkboxColorProperty;
   assert.ok(!visible(options.checkboxColorValues));
   values.status_type = 'none';
   for (const key of [
