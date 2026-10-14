@@ -1,3 +1,4 @@
+import { viewGroups, groupArrow } from '../../shared/status';
 import type { BasesPropertyId, QueryController, Value } from 'obsidian';
 import { NullValue, setIcon } from 'obsidian';
 import type { ListItem } from '../list/view';
@@ -145,7 +146,7 @@ export class BaseTableView extends BaseListView {
       });
       this.makeColumnResize(th, pid);
     }
-    const groups = this.data.groupedData ?? [];
+    const groups = viewGroups(this);
     const grouped = groups.some((group) => group.hasKey() && group.key != null);
     if (!grouped) {
       const body = this.table.createEl('tbody', { cls: 'wcc-table-ungrouped' });
@@ -168,9 +169,15 @@ export class BaseTableView extends BaseListView {
           .createEl('tr', { cls: 'wcc-table-group-row' })
           .createEl('th', { attr: { colspan: String(this.columns.length), scope: 'rowgroup' } });
         const items = this.collectItems([...group.entries]);
+        const collapsed = groupArrow(this, header, key);
         header.createSpan({ text: `${key === NULL_KEY ? '—' : key} · ${items.length}` });
         items.forEach((item) => this.makeTableRow(body, item));
         this.makeAddRow(body, key);
+        Array.from(body.children)
+          .slice(1)
+          .forEach((row) => {
+            (row as HTMLElement).hidden = collapsed;
+          });
       }
     }
     this.measureColumnWidths(widths);

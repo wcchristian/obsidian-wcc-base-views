@@ -1,3 +1,4 @@
+import { setIcon } from 'obsidian';
 type Config = { get(key: string): unknown };
 
 /** Each view remembers manual choices across refreshes until its default changes. */
@@ -14,7 +15,10 @@ export class CardDetails {
     prefix: string,
     config: Config,
   ): void {
-    const defaultExpanded = config.get('detailsExpanded') === true;
+    const setting = config.get('detailsExpanded');
+    const defaultExpanded =
+      setting === true ||
+      (setting == null && (prefix === 'wcc-kanban' || prefix === 'wcc-timeline'));
     if (defaultExpanded !== this.defaultExpanded) {
       this.states.clear();
       this.defaultExpanded = defaultExpanded;
@@ -30,7 +34,7 @@ export class CardDetails {
       card.toggleClass('wcc-details-expanded', expanded);
       button.setAttribute('aria-expanded', String(expanded));
       button.setAttribute('aria-label', `${expanded ? 'Hide' : 'Show'} details for ${title}`);
-      button.textContent = expanded ? '⌃' : '⌄';
+      setIcon(button, expanded ? 'chevron-down' : 'chevron-right');
     };
     update();
     button.onclick = (event) => {

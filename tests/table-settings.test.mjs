@@ -45,10 +45,13 @@ const table = plugin.views.find((view) => view.name === 'WCC - Table');
 assert.ok(table, 'Table is registered with the requested name');
 const options = table.options().flatMap((group) => group.items ?? [group]);
 assert.deepEqual(
-  options.map((option) => option.key),
+  options.map((option) => option.key).sort(),
   [
+    'status_type',
+    'doneProperty',
+    'statusProperty',
+    'statusValues',
     'sortOrderProperty',
-    'itemPadding',
     'colorProperty',
     'colorValues',
     'checkboxColorProperty',
@@ -57,16 +60,13 @@ assert.deepEqual(
     'bgFit',
     'bgBlur',
     'bgOpacity',
-  ],
-  'Table retains shared appearance and creation settings, without Table config or Properties',
+  ].sort(),
+  'Table retains shared appearance and creation settings, with completion settings and without Table config',
 );
 assert.ok(!table.options().some((option) => option.displayName === 'Table config'));
 assert.deepEqual(
-  table
-    .options()
-    .find((option) => option.displayName === 'Properties')
-    .items.map((option) => option.key),
-  ['sortOrderProperty'],
+  table.options().map((group) => group.displayName),
+  ['Setup', 'Appearance', 'Advanced'],
 );
 for (const view of plugin.views) {
   assert.ok(

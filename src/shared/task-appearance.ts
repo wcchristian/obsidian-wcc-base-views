@@ -5,7 +5,7 @@ import { resolveColor } from './color-rules';
 
 export function propertyColor(
   config: BasesViewConfig,
-  entry: BasesEntry,
+  entry: Pick<BasesEntry, 'getValue'>,
   checkbox = false,
 ): string | null {
   const key = checkbox ? 'checkboxColorProperty' : 'colorProperty';
@@ -24,4 +24,16 @@ export function colorCheckbox(el: HTMLElement, config: BasesViewConfig, entry: B
     el.addClass('wcc-colored-check');
     el.setCssProps({ ['--wcc-check-color']: color });
   }
+}
+
+/** Reuse checkbox color rules for pills, with a subtle tinted background. */
+export function colorStatus(
+  el: HTMLElement,
+  config: BasesViewConfig,
+  entry: Pick<BasesEntry, 'getValue'>,
+): void {
+  const color = propertyColor(config, entry, true);
+  el.toggleClass('wcc-colored-status', !!color);
+  if (color) el.setCssProps({ ['--wcc-status-color']: color });
+  else el.style.removeProperty('--wcc-status-color');
 }

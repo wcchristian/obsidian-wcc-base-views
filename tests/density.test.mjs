@@ -24,7 +24,7 @@ const { applyViewDensity, hideProperty } = await loadModule('src/shared/view-den
 });
 const config = (values = {}) => ({ get: (key) => values[key] });
 
-test('compact density changes layout and default padding; explicit padding survives switching', () => {
+test('density chooses padding and ignores retired custom padding', () => {
   const classes = new Map();
   const styles = new Map();
   const root = {
@@ -41,7 +41,7 @@ test('compact density changes layout and default padding; explicit padding survi
   assert.equal(styles.get('--wcc-item-padding'), '6px');
   for (const density of ['compact', 'comfortable']) {
     applyViewDensity(root, config({ density, itemPadding: 9 }));
-    assert.equal(styles.get('--wcc-item-padding'), '9px');
+    assert.equal(styles.get('--wcc-item-padding'), density === 'compact' ? '3px' : '6px');
   }
 });
 

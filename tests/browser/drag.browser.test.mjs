@@ -224,7 +224,16 @@ try {
       touch,
     );
     const swimlane = await page.evaluate(() => window.dragState);
-    assert.equal(swimlane.writes.length, 1);
+    assert.equal(
+      swimlane.writes.length,
+      3,
+      'one group update followed by two automatic rank writes',
+    );
+    assert.equal(swimlane.writes[0].fm.status, 'Done');
+    assert.equal(swimlane.writes[0].fm.project, 'Project2');
+    assert.equal(swimlane.config.sortOrderProperty, 'note.order');
+    assert.equal(swimlane.frontmatter['C.md'].order, 0);
+    assert.equal(swimlane.frontmatter['A.md'].order, 10);
     assert.equal(swimlane.frontmatter['A.md'].status, 'Done');
     assert.equal(swimlane.frontmatter['A.md'].project, 'Project2');
     // Horizontal edge scrolling brings an offscreen column into the drop area.
@@ -626,8 +635,8 @@ try {
       await page.waitForFunction(() => window.dragState.refreshes === 1);
       assert.deepEqual(
         await page.evaluate(() => window.dragState.writes.map((write) => write.path)),
-        ['A.md'],
-        'rescheduling writes only the single dragged event',
+        ['A.md', 'A.md'],
+        'rescheduling updates the dragged event date and its automatic rank',
       );
       assert.equal(await page.locator('.wcc-drop-feedback:not([hidden])').count(), 0);
       await page.evaluate(() => window.competingDrag.destroy());
@@ -919,8 +928,10 @@ try {
           };
         });
         assert.ok(
-          Math.abs(nativeAppearance.width - nativeAppearance.paneWidth) < 2,
-          'one-column table fills the pane like the native table',
+          nativeAppearance.width >= 40 &&
+            nativeAppearance.width <= 300 &&
+            nativeAppearance.width <= nativeAppearance.paneWidth,
+          'one-column table keeps its automatic content width within the theme limits',
         );
         assert.equal(nativeAppearance.underlined, true, 'note names retain native link styling');
         assert.ok(nativeAppearance.caption.includes('file name'));
@@ -1041,8 +1052,8 @@ try {
         .locator('.wcc-table-title-cell')
         .first()
         .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
-      touch ? 140 : 260,
-      'name width stays attached to its property',
+      Math.round(firstHeader.width),
+      'automatic name width stays attached to its property',
     );
     const savedBeforeCancel = await page.evaluate(() =>
       JSON.stringify(window.dragState.config.order),
@@ -1083,8 +1094,8 @@ try {
       await page
         .locator('.wcc-table-wrap')
         .evaluate((el) => el.style.getPropertyValue('--wcc-item-padding')),
-      '11px',
-      'Table retains custom spacing',
+      '6px',
+      'Table ignores retired custom spacing and uses its density default',
     );
     assert.equal(
       await page.locator('.wcc-table-table').getAttribute('aria-label'),
@@ -1134,6 +1145,10 @@ try {
       'table drag never opens notes',
     );
     await page.evaluate(() => window.setupViewFields('table'));
+    const initialResizeWidth = await page
+      .locator('.wcc-table-table thead th')
+      .first()
+      .evaluate((el) => el.getBoundingClientRect().width);
     const tableHandle = page.getByRole('separator', { name: 'Resize Name column' });
     const tableBounds = await tableHandle.boundingBox();
     const tableResizeFrom = {
@@ -1148,7 +1163,7 @@ try {
     );
     assert.equal(
       await page.evaluate(() => window.dragState.config.columnWidths['file.name']),
-      touch ? 190 : 310,
+      Math.round(initialResizeWidth + 50),
     );
     await page.evaluate(() => {
       window.currentDragView.wrap.empty();
@@ -1159,7 +1174,7 @@ try {
         .locator('.wcc-table-title-cell')
         .first()
         .evaluate((el) => Math.round(el.getBoundingClientRect().width)),
-      touch ? 190 : 310,
+      Math.round(initialResizeWidth + 50),
       'column width persists when rebuilt',
     );
     await page.locator('.wcc-table-wrap').evaluate((el) => {
@@ -1471,7 +1486,11 @@ try {
           `${mode} ${touch ? 'touch' : 'mouse'} padding ${padding} long title wraps: ${JSON.stringify(metrics)}`,
         );
         assert.ok(metrics.fits, `${mode} complete title fits`);
-        assert.equal(metrics.padding, `${padding ?? 6}px`, `${mode} local padding`);
+        assert.equal(
+          metrics.padding,
+          '6px',
+          `${mode} automatic padding ignores retired custom values`,
+        );
         if (mode === 'timeline') {
           const rows = await page.locator('.wcc-timeline-row').evaluateAll((els) =>
             els.map((el) => {

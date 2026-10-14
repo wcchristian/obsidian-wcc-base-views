@@ -1,3 +1,16 @@
+import { ensureManualOrder } from '../../shared/manual-order';
+import { viewHelp } from '../../shared/view-help';
+import { CardDetails } from '../../shared/card-details';
+import {
+  checkboxProperty,
+  renderStatus,
+  viewGroups,
+  collapseArrow,
+  groupArrow,
+  configuredStatuses,
+  statusProperty,
+  groupProperty,
+} from '../../shared/status';
 import type { KanbanCard } from './model';
 import { createBackground } from '../../shared/background';
 import { viewProperty } from '../../shared/view-properties';
@@ -50,6 +63,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
   hoverPopover: HoverPopover | null = null;
 
   private wrap: HTMLElement;
+  private cardDetails = new CardDetails();
   private colorMap: Map<string, string> = new Map();
   private autoColorMap: Map<string, string> = new Map();
 
@@ -104,6 +118,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     this.colorMap = this.parseColorMap();
     this.dragCards = [];
     this.wrap.empty();
+    this.renderViewTools();
     this.buildBoard();
     restoreScroll();
   }
@@ -113,6 +128,45 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     this.clearKanbanDrop();
     this.dropIndicator.destroy();
     super.onunload();
+  }
+
+  private renderViewTools() {
+    const toolbar = this.wrap.createDiv('wcc-view-tools');
+    const columns = this.getHiddenColumns();
+    const subgroups = this.getHiddenSubgroups();
+    if (columns.length || subgroups.length) {
+      const restore = toolbar.createEl('button', {
+        text: 'Manage hidden groups',
+        attr: { type: 'button' },
+      });
+      restore.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const menu = new Menu();
+        const addRestore = (key: string, values: string[], value: string, label: string) =>
+          menu.addItem((item) =>
+            item.setTitle(`Show ${label}: ${value}`).onClick(() => {
+              this.config.set(
+                key,
+                values.filter((v) => v !== value),
+              );
+              this.onDataUpdated();
+            }),
+          );
+        for (const value of columns) addRestore('hiddenColumns', columns, value, 'column');
+        for (const value of subgroups) addRestore('hiddenSubgroups', subgroups, value, 'swimlane');
+        menu.addSeparator();
+        menu.addItem((item) =>
+          item.setTitle('Show all hidden groups').onClick(() => {
+            this.config.set('hiddenColumns', []);
+            this.config.set('hiddenSubgroups', []);
+            this.onDataUpdated();
+          }),
+        );
+        menu.showAtMouseEvent(event);
+      };
+    }
+    viewHelp(this.app, toolbar, 'kanban');
   }
 
   // ── config helpers ──────────────────────────────────────────────────────
@@ -332,15 +386,14 @@ export class BaseKanbanView extends BasesView implements HoverParent {
   private buildBoard() {
     createBackground(this.wrap, this.app, this.config, 'wcc-kanban-bg-layer');
 
-    const groups = this.data.groupedData;
-    if (!groups?.length) {
-      this.wrap.createDiv({ cls: 'wcc-kanban-empty', text: 'No data' });
-      return;
-    }
+    const groups = viewGroups(this);
 
     const subgroupPid = viewProperty(this.config, 'subgroupProperty') ?? null;
-    const donePid = viewProperty(this.config, 'doneProperty') ?? null;
-    const showEmpty = this.config.get('showEmptyColumns') !== false;
+    const donePid = checkboxProperty(this.config);
+    const statusGrouped =
+      statusProperty(this.config) !== null &&
+      groupProperty(this.config) === statusProperty(this.config);
+    const showEmpty = statusGrouped || this.config.get('showEmptyColumns') !== false;
     const colorMode = (this.config.get('columnColorMode') as string) || 'header';
     const hiddenCols = new Set(this.getHiddenColumns());
     const hiddenSubs = new Set(this.getHiddenSubgroups());
@@ -355,6 +408,11 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         allColKeysRaw.push(key);
       }
     }
+    for (const key of this.getColumnOrder())
+      if (!colKeySet.has(key)) {
+        colKeySet.add(key);
+        allColKeysRaw.push(key);
+      }
     const allColKeys = this.orderColumns(allColKeysRaw);
 
     // Auto-color columns when no colors manually configured
@@ -391,7 +449,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
       return card;
     };
 
-    if (!subgroupPid) {
+    if (!subgroupPid || !groups.some((g) => g.entries.length)) {
       const cards: KanbanCard[] = [];
       for (const g of groups) {
         const colKey = g.hasKey() && g.key != null ? g.key.toString() : NULL_KEY;
@@ -436,6 +494,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         if (hiddenSubs.has(sgKey)) continue;
         const section = this.wrap.createDiv('wcc-kanban-section');
         const sHdr = section.createDiv('wcc-kanban-section-hdr');
+        const collapsed = groupArrow(this, sHdr, `subgroup:${sgKey}`);
         sHdr.createSpan({ cls: 'wcc-kanban-section-title', text: sgKey });
         const kebab = sHdr.createEl('button', { cls: 'wcc-kanban-kebab', title: 'Options' });
         kebab.textContent = '⋮';
@@ -453,6 +512,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
           menu.showAtMouseEvent(e);
         });
 
+        if (collapsed) continue;
         const colMap = subgroupMap.get(sgKey)!;
         const cards: KanbanCard[] = [];
         for (const [, colCards] of colMap) cards.push(...colCards);
@@ -483,6 +543,60 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     donePid: BasesPropertyId | null,
   ) {
     const board = container.createDiv('wcc-kanban-board');
+    const groupPid = groupProperty(this.config);
+    if (groupPid && parsePropertyId(groupPid).type === 'note') {
+      const creator = board.createDiv('wcc-kanban-column-creator');
+      const add = creator.createEl('button', {
+        text: 'Add column',
+        cls: 'wcc-kanban-add-column',
+        attr: { type: 'button', 'aria-label': 'Add column', title: 'Add column' },
+      });
+      add.onclick = (event) => {
+        event.stopPropagation();
+        if (creator.querySelector('input')) return;
+        const input = creator.createEl('input', {
+          type: 'text',
+          attr: { placeholder: 'New column name', 'aria-label': 'New column name' },
+        });
+        const save = creator.createEl('button', { text: 'Add', attr: { type: 'button' } });
+        const cancel = creator.createEl('button', { text: 'Cancel', attr: { type: 'button' } });
+        const dismiss = () => {
+          input.remove();
+          save.remove();
+          cancel.remove();
+          add.focus();
+        };
+        const submit = () => {
+          const value = input.value.trim();
+          if (!value) {
+            input.focus();
+            return;
+          }
+          if (groupPid === statusProperty(this.config)) {
+            this.config.set('statusValues', [
+              ...new Set([...configuredStatuses(this.config), value]),
+            ]);
+          }
+          this.config.set('columnOrder', [...new Set([...allColKeys, value])]);
+          const hidden = this.getHiddenColumns();
+          this.config.set(
+            'hiddenColumns',
+            hidden.filter((key) => key !== value),
+          );
+          this.config.set('showEmptyColumns', true);
+          this.onDataUpdated();
+        };
+        save.onclick = submit;
+        cancel.onclick = dismiss;
+        input.onkeydown = (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submit();
+          } else if (e.key === 'Escape') dismiss();
+        };
+        input.focus();
+      };
+    }
 
     const byCol = new Map<string, KanbanCard[]>();
     for (const c of cards) {
@@ -559,6 +673,10 @@ export class BaseKanbanView extends BasesView implements HoverParent {
 
     // ── Header ──
     const hdr = col.createDiv('wcc-kanban-col-hdr');
+    collapseArrow(hdr, colKey, collapsed, () => {
+      this.toggleCollapsed(colKey);
+      this.onDataUpdated();
+    });
     dragGrip(hdr, `Drag column ${colKey} to reorder`);
     if (color && (colorMode === 'header' || colorMode === 'both')) {
       hdr.setCssStyles({ borderTop: `4px solid ${color}` });
@@ -600,16 +718,6 @@ export class BaseKanbanView extends BasesView implements HoverParent {
       const menu = new Menu();
       const curOrder = this.getColumnOrder();
       const idx = curOrder.indexOf(colKey);
-
-      menu.addItem((i) =>
-        i
-          .setTitle(collapsed ? 'Expand' : 'Collapse')
-          .setIcon(collapsed ? 'maximize-2' : 'minimize-2')
-          .onClick(() => {
-            this.toggleCollapsed(colKey);
-          }),
-      );
-      menu.addSeparator();
 
       if (!collapsed) {
         menu.addItem((i) =>
@@ -744,7 +852,11 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     dragGrip(titleRow, `Drag ${card.title} to move or reorder`);
 
     // Completion controls share the same keyboard and save/error behavior.
-    if (donePid && parsePropertyId(donePid).type === 'note') {
+    if (
+      !renderStatus(this, titleRow, card) &&
+      donePid &&
+      parsePropertyId(donePid).type === 'note'
+    ) {
       const cb = titleRow.createEl('button', {
         cls: 'wcc-kanban-check' + (card.done ? ' wcc-kanban-check-on' : ''),
         attr: {
@@ -835,6 +947,12 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         const { type } = parsePropertyId(pid);
         if (pid === 'file.name') continue;
         if (donePid && pid === donePid) continue;
+        if (
+          statusProperty(this.config) &&
+          (pid === statusProperty(this.config) ||
+            pid === (viewProperty(this.config, 'doneProperty') ?? 'note.done'))
+        )
+          continue;
         if (coverPid && pid === coverPid) continue;
         const val = card.entry.getValue(pid);
         if ((!val || val instanceof NullValue) && type !== 'note') continue;
@@ -845,6 +963,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
         });
         this.renderPropVal(row, val ?? new NullValue(), card, pid);
       }
+      this.cardDetails.render(titleRow, el, props, card.title, card.id, 'wcc-kanban', this.config);
     }
   }
 
@@ -983,7 +1102,7 @@ export class BaseKanbanView extends BasesView implements HoverParent {
     if (sourceBucket !== targetBucket) {
       await this.moveCard(card.id, column, subgroup, card.subgroupKey);
     }
-    const sortProp = this.getSortOrderProp();
+    const sortProp = ensureManualOrder(this);
     if (sortProp) {
       for (let i = 0; i < order.length; i++) {
         const file = this.app.vault.getFileByPath(order[i]);

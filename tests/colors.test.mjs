@@ -58,7 +58,7 @@ assert.equal(resolveColor('high', ['high:rgb(240, 80, 70)']), 'rgb(240, 80, 70)'
 const mock = `export class NullValue {} export class ListValue { constructor(values) { this.values=values; } length(){return this.values.length;} get(i){return this.values[i];} }`;
 const adapter = await build({
   stdin: {
-    contents: `export {propertyColor,colorCheckbox} from './src/shared/task-appearance'; export {NullValue,ListValue} from 'obsidian';`,
+    contents: `export {propertyColor,colorCheckbox,colorStatus} from './src/shared/task-appearance'; export {NullValue,ListValue} from 'obsidian';`,
     resolveDir: process.cwd(),
   },
   bundle: true,
@@ -77,7 +77,7 @@ const adapter = await build({
 });
 const adapted = { exports: {} };
 new Function('module', 'exports', adapter.outputFiles[0].text)(adapted, adapted.exports);
-const { propertyColor, colorCheckbox, NullValue, ListValue } = adapted.exports;
+const { propertyColor, colorCheckbox, colorStatus, NullValue, ListValue } = adapted.exports;
 const values = {
   'note.project': { toString: () => '[[CA Notes/Projects/Datasite|Work]]' },
   'note.priority': { toString: () => 'high' },
@@ -128,3 +128,32 @@ assert.equal(propertyColor(config, entry), '#619de6');
 console.log(
   'Color rules, link aliases, list values, independent primary/checkbox colors, and disabled settings passed.',
 );
+
+settings.checkboxColorProperty = 'note.priority';
+settings.checkboxColorValues = ['high:#e85d5d'];
+const pill = {
+  classes: new Set(),
+  css: {},
+  toggleClass(name, on) {
+    on ? this.classes.add(name) : this.classes.delete(name);
+  },
+  setCssProps(props) {
+    Object.assign(this.css, props);
+  },
+  style: {
+    removeProperty(name) {
+      delete pill.css[name];
+    },
+  },
+};
+colorStatus(pill, config, entry);
+assert.ok(pill.classes.has('wcc-colored-status'));
+assert.equal(
+  pill.css['--wcc-status-color'],
+  '#e85d5d',
+  'pill uses the exact same mapping as the checkbox',
+);
+values['note.priority'] = { toString: () => 'unmapped' };
+colorStatus(pill, config, entry);
+assert.ok(!pill.classes.has('wcc-colored-status'));
+assert.equal(pill.css['--wcc-status-color'], undefined, 'unmapped values clear the previous tint');
